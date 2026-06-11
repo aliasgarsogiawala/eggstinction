@@ -44,8 +44,26 @@ export class PrehistoricScene {
       w: Math.min(this.w * 0.4, 520),
       h: this.h * 0.34,
     };
+    this.buildRidge();
     this.buildTrees();
     this.buildStars();
+  }
+
+  buildRidge() {
+    // Precomputed once — drawing it with fresh randomness each frame is what
+    // made the horizon shimmer like it was half-rendered.
+    const pts = [];
+    const step = 64;
+    const base = this.horizonY * 0.9;
+    for (let x = -step; x <= this.w + step; x += step) {
+      const y =
+        base -
+        Math.abs(Math.sin(x * 0.006)) * this.horizonY * 0.12 -
+        Math.abs(Math.sin(x * 0.017 + 1.3)) * this.horizonY * 0.05 -
+        Math.random() * 8;
+      pts.push({ x, y });
+    }
+    this.ridge = pts;
   }
 
   buildStars() {
@@ -310,8 +328,8 @@ export class PrehistoricScene {
       ctx.restore();
     }
 
-    // Distant mountains.
-    this.drawRidge(this.horizonY, "#1a1422", 0.5, 90);
+    // Distant mountains (static silhouette).
+    this.drawMountains();
 
     // The volcano.
     this.drawVolcano();
@@ -372,17 +390,13 @@ export class PrehistoricScene {
     ctx.fillRect(0, 0, W, H);
   }
 
-  drawRidge(baseY, color, amp, step) {
+  drawMountains() {
     const { ctx } = this;
-    ctx.fillStyle = color;
+    ctx.fillStyle = "#161024";
     ctx.beginPath();
-    ctx.moveTo(0, baseY);
-    let y = baseY;
-    for (let x = 0; x <= this.w + step; x += step) {
-      y = baseY - Math.abs(Math.sin(x * 0.013)) * amp - rand(0, 10);
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(this.w, baseY);
+    ctx.moveTo(this.ridge[0].x, this.horizonY);
+    for (const p of this.ridge) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(this.ridge[this.ridge.length - 1].x, this.horizonY);
     ctx.closePath();
     ctx.fill();
   }

@@ -2,14 +2,30 @@
 // A dino egg sits in a nest; a catapult on it aims at the cursor, hold to hurl.
 // Predators swarm in from the screen edges; one touch on the egg = HATCHING.
 
+import { sound } from "./sound";
+
 const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// Predator roster — distinct sizes, speeds, toughness and behaviour so the
+// swarm isn't one flavour of enemy. Unlocked progressively by wave.
+const PREDATORS = {
+  raptor:   { rMin: 11, rMax: 16, spd: [26, 48], hp: 1, wob: 1.0, color: "#b5613a", dark: "#7a3d24" },
+  runt:     { rMin: 7,  rMax: 10, spd: [52, 82], hp: 1, wob: 1.7, color: "#caa24a", dark: "#8a6a26" },
+  brute:    { rMin: 18, rMax: 24, spd: [16, 28], hp: 3, wob: 0.4, color: "#5d7048", dark: "#2c3a22" },
+  flyer:    { rMin: 8,  rMax: 11, spd: [74, 104], hp: 1, wob: 0.2, color: "#8a6fb0", dark: "#4a3870" },
+  charger:  { rMin: 14, rMax: 18, spd: [34, 46], hp: 2, wob: 0.5, color: "#a8553a", dark: "#5f2c1c" },
+  splitter: { rMin: 13, rMax: 16, spd: [34, 50], hp: 1, wob: 1.1, color: "#7fae5a", dark: "#3e5a2c" },
+};
 
 export class EggDefense {
-  constructor(canvas, { onFertilized, onKill } = {}) {
+  constructor(canvas, { onFertilized, onKill, onWave, upgrades } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onFertilized = onFertilized;
     this.onKill = onKill;
+    this.onWave = onWave;
+    this.upgrades = upgrades || {};
     this.paused = false;
 
     this.mouse = { x: 0, y: 0, down: false };
@@ -47,6 +63,39 @@ export class EggDefense {
     // Active timed buffs (seconds remaining), set by activate().
     this.buffs = { rapidfire: 0, tripleshot: 0, slowfield: 0, pierce: 0 };
     this.timeScale = 1; // slow-mo factor applied to swimmer movement
+    // Combo + ROAR meter (the active ability beyond shooting).
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.roar = 0; // 0..1 charge, fills with kills; spend for a shockwave
+    this.shockwaves = [];
+
+    // Meta-progression upgrades applied to this run.
+    const up = this.upgrades;
+    this.bulletDmg = 1 + (up.damage || 0);
+    this.fireBase = Math.max(0.04, 0.09 - (up.firerate || 0) * 0.012);
+    this.roarGain = 0.045 + (up.roarpower || 0) * 0.015;
+    this.roarDmg = 2 + (up.roarpower || 0);
+    this.roarMaxMul = 0.6 + (up.roarpower || 0) * 0.06;
+    this.maxEggHP = 1 + (up.egghp || 0);
+    this.eggHP = this.maxEggHP;
+    this.eggInvuln = 0;
+
+    // Wave director.
+    this.wave = 0;
+    this.waveState = "active";
+    this.spawnRemaining = 0;
+    this.breakTimer = 0;
+    this.isBossWave = false;
+    this.bossSpawned = false;
+    this.bossAlive = false;
+
+    // Juice.
+    this.hitStop = 0;
+    this.muzzle = 0;
+    this.floaters = [];
+    this.pendingSpawns = [];
+
+    this.startWave(1);
     // Atmospheric layer (cosmetic): drifting ash, sky meteors, lightning.
     this.ambient = [];
     this.skyMeteors = [];
@@ -143,6 +192,162 @@ export class EggDefense {
     }
   }
 
+  // Spend a full ROAR meter: a shockwave erupts from the nest, hurling and
+  // wounding every predator it sweeps over. The egg's one active defensive move.
+  roarTrigger() {
+    if (this.over || this.paused || this.roar < 1) return;
+    this.roar = 0;
+    const c = this.center;
+    this.shockwaves.push({
+      r: this.eggR + 8,
+      max: Math.hypot(this.canvas.width, this.canvas.height) * this.roarMaxMul,
+      hit: new Set(),
+    });
+    this.shake = Math.min(this.shake + 9, 11);
+    this.burst(c.x, c.y, "#ffd98a", 46);
+    this.spawnFloater(c.x, c.y - this.eggR - 24, "ROAR!", "#ffd98a");
+    sound.play("roar");
+  }
+
+  registerKill(s) {
+    const boss = s.type === "boss";
+    const big = boss || s.type === "brute" || s.type === "charger";
+    const worth = boss ? 18 : 1; // bosses are worth a pile of DNA
+    this.kills += worth;
+    this.combo++;
+    this.comboTimer = 2;
+    this.roar = Math.min(1, this.roar + this.roarGain + this.combo * 0.004);
+    this.shake = Math.min(this.shake + (big ? 4 : 1), boss ? 12 : 5);
+    this.burst(s.x, s.y, "#9ad14f", boss ? 50 : s.type === "brute" ? 22 : 12);
+    this.spawnFloater(s.x, s.y - s.r, `+${worth * 2}k`, boss ? "#ff9a3d" : "#9ad14f");
+    if (boss) {
+      this.bossAlive = false;
+      this.hitStop = 0.1;
+      this.spawnFloater(s.x, s.y - s.r - 18, "BOSS DOWN!", "#ffd98a");
+      sound.play("bigcrunch");
+    } else if (big) {
+      this.hitStop = 0.04;
+      sound.play("bigcrunch", 60);
+    } else {
+      sound.play("crunch", 35);
+    }
+    if (s.type === "splitter" && !s.split) this.spawnSplit(s);
+    this.onKill?.(this.kills, this.combo);
+  }
+
+  spawnFloater(x, y, text, color = "#ffd98a") {
+    if (this.floaters.length > 28) this.floaters.shift();
+    this.floaters.push({ x, y, text, color, life: 0.95, vy: -42 });
+  }
+
+  spawnSplit(s) {
+    const cfg = PREDATORS.runt;
+    for (let i = 0; i < 2; i++) {
+      this.pendingSpawns.push({
+        x: s.x + rand(-10, 10),
+        y: s.y + rand(-10, 10),
+        type: "runt",
+        r: cfg.rMin,
+        speed: rand(cfg.spd[0], cfg.spd[1]),
+        hp: 1, maxhp: 1, wob: cfg.wob,
+        color: cfg.color, dark: cfg.dark,
+        phase: Math.random() * TAU, angle: 0,
+        kx: rand(-120, 120), ky: rand(-120, 120),
+        hitFlash: 0, dead: false, split: true,
+      });
+    }
+  }
+
+  // ---------------- waves ----------------
+  startWave(n) {
+    this.wave = n;
+    this.waveState = "active";
+    this.spawnTimer = 0;
+    this.isBossWave = n % 3 === 0;
+    this.bossSpawned = false;
+    this.bossAlive = false;
+    this.spawnRemaining = this.isBossWave ? 4 + n : 6 + n * 2;
+    this.onWave?.({ wave: n, boss: this.isBossWave });
+    sound.play("wave");
+  }
+
+  updateWaves(dt) {
+    if (this.waveState === "break") {
+      this.breakTimer -= dt;
+      if (this.breakTimer <= 0) this.startWave(this.wave + 1);
+      return;
+    }
+    if (this.spawnRemaining > 0) {
+      const every = Math.max(0.28, 0.85 - this.wave * 0.04);
+      this.spawnTimer += dt;
+      while (this.spawnTimer > every && this.spawnRemaining > 0) {
+        this.spawnTimer -= every;
+        if (this.isBossWave && !this.bossSpawned) {
+          this.spawnBoss();
+          this.bossSpawned = true;
+          this.bossAlive = true;
+        } else {
+          this.spawnSperm();
+        }
+        this.spawnRemaining--;
+      }
+    } else if (this.sperms.length === 0) {
+      this.waveState = "break";
+      this.breakTimer = 3.5;
+      this.onWave?.({ wave: this.wave, cleared: true });
+    }
+  }
+
+  spawnBoss() {
+    const w = this.canvas.width, h = this.canvas.height;
+    const side = Math.floor(Math.random() * 4);
+    const pos =
+      side === 0 ? { x: w / 2, y: -40 } :
+      side === 1 ? { x: w + 40, y: h / 2 } :
+      side === 2 ? { x: w / 2, y: h + 40 } :
+                   { x: -40, y: h / 2 };
+    const hp = 26 + this.wave * 6;
+    this.sperms.push({
+      ...pos,
+      type: "boss",
+      r: this.eggR * 0.72,
+      speed: 30,
+      hp, maxhp: hp,
+      wob: 0.3,
+      color: "#7a2f24", dark: "#3a1410",
+      phase: 0, angle: 0,
+      kx: 0, ky: 0, hitFlash: 0, dead: false,
+      dashState: "seek", dashClock: 2.5,
+    });
+  }
+
+  updateShockwaves(dt) {
+    if (!this.shockwaves.length) return;
+    const c = this.center;
+    for (const sw of this.shockwaves) {
+      sw.r += 900 * dt;
+      for (const s of this.sperms) {
+        if (s.dead || sw.hit.has(s)) continue;
+        const d = Math.hypot(s.x - c.x, s.y - c.y);
+        if (d <= sw.r) {
+          sw.hit.add(s);
+          const nx = (s.x - c.x) / (d || 1);
+          const ny = (s.y - c.y) / (d || 1);
+          s.kx += nx * (s.type === "boss" ? 120 : 560);
+          s.ky += ny * (s.type === "boss" ? 120 : 560);
+          s.hitFlash = 0.12;
+          s.hp -= this.roarDmg;
+          if (s.hp <= 0) {
+            s.dead = true;
+            this.registerKill(s);
+          }
+        }
+      }
+    }
+    this.shockwaves = this.shockwaves.filter((sw) => sw.r < sw.max);
+    this.sperms = this.sperms.filter((s) => !s.dead);
+  }
+
   start() {
     this.reset();
     this.running = true;
@@ -193,24 +398,44 @@ export class EggDefense {
       return;
     }
 
-    // Difficulty ramp: spawn faster + swim faster over time.
-    const spawnEvery = Math.max(0.12, 0.9 - this.elapsed * 0.022);
-    this.spawnTimer += dt;
-    while (this.spawnTimer > spawnEvery) {
-      this.spawnTimer -= spawnEvery;
-      this.spawnSperm();
+    // Hit-stop: a couple of frozen frames on a big kill for punch.
+    if (this.hitStop > 0) {
+      this.hitStop -= dt;
+      this.updateParticles(dt);
+      return;
     }
 
+    // Wave director spawns the swarm + bosses.
+    this.updateWaves(dt);
+
     if (this.shieldFlash > 0) this.shieldFlash = Math.max(0, this.shieldFlash - dt);
+    if (this.muzzle > 0) this.muzzle -= dt;
+    if (this.eggInvuln > 0) this.eggInvuln -= dt;
+    for (const f of this.floaters) {
+      f.y += f.vy * dt;
+      f.life -= dt;
+    }
+    this.floaters = this.floaters.filter((f) => f.life > 0);
     // Tick down active buff timers.
     for (const k in this.buffs) {
       if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
     }
 
-    // Turret fire (hold mouse). Rapid Fire shortens the cooldown.
+    // Combo decays if you stop killing; ROAR slowly trickles up regardless.
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) {
+        this.combo = 0;
+        this.onKill?.(this.kills, 0);
+      }
+    }
+    this.roar = Math.min(1, this.roar + dt * 0.02);
+    this.updateShockwaves(dt);
+
+    // Turret fire (hold mouse). Rapid Fire + the fire-rate upgrade shorten it.
     this.fireTimer -= dt;
     if (this.mouse.down && this.fireTimer <= 0) {
-      this.fireTimer = this.buffs.rapidfire > 0 ? 0.05 : 0.09;
+      this.fireTimer = this.buffs.rapidfire > 0 ? this.fireBase * 0.6 : this.fireBase;
       this.fire();
     }
 
@@ -235,25 +460,53 @@ export class EggDefense {
     this.timeScale += (target - this.timeScale) * ease;
     const ts = this.timeScale;
 
-    // Swimmers seek the egg with a wiggle (slowed by slow-mo).
+    // Predators seek the egg with a wiggle (slowed by slow-mo), plus any
+    // knockback velocity from bullets / a ROAR.
     for (const s of this.sperms) {
       const dx = c.x - s.x;
       const dy = c.y - s.y;
       const d = Math.hypot(dx, dy) || 1;
+
+      // Chargers + bosses telegraph a wind-up, then dash at the nest.
+      let sf = 1;
+      if (s.type === "charger" || s.type === "boss") {
+        s.dashClock -= dt * ts;
+        if (s.dashClock <= 0) {
+          if (s.dashState === "seek") { s.dashState = "wind"; s.dashClock = 0.55; s.hitFlash = 0.6; }
+          else if (s.dashState === "wind") { s.dashState = "dash"; s.dashClock = 0.45; }
+          else { s.dashState = "seek"; s.dashClock = (s.type === "boss" ? 2.2 : 3) + Math.random() * 1.4; }
+        }
+        if (s.dashState === "wind") sf = 0.05;
+        else if (s.dashState === "dash") sf = s.type === "boss" ? 2.6 : 3.3;
+      }
+
       s.phase += dt * 14 * ts;
-      const wob = Math.sin(s.phase) * 60;
-      s.x += ((dx / d) * s.speed * speedMul + (-dy / d) * wob * 0.4) * dt * ts;
-      s.y += ((dy / d) * s.speed * speedMul + (dx / d) * wob * 0.4) * dt * ts;
+      const wob = Math.sin(s.phase) * 60 * s.wob;
+      const spd = s.speed * speedMul * sf;
+      s.x += ((dx / d) * spd + (-dy / d) * wob * 0.4) * dt * ts + s.kx * dt;
+      s.y += ((dy / d) * spd + (dx / d) * wob * 0.4) * dt * ts + s.ky * dt;
+      s.kx -= s.kx * Math.min(1, dt * 7);
+      s.ky -= s.ky * Math.min(1, dt * 7);
+      if (s.hitFlash > 0 && s.dashState !== "wind") s.hitFlash -= dt;
       s.angle = Math.atan2(c.y - s.y, c.x - s.x);
 
       if (d < this.eggR + s.r) {
         if (this.shield) {
-          // Egg Shield absorbs the hit and blasts the whole swarm away.
           this.consumeShield();
           break;
         }
-        this.fertilize();
-        return;
+        if (this.eggInvuln > 0) continue;
+        // The egg takes a hit; bosses don't instantly pop a multi-HP egg.
+        s.dead = true;
+        this.burst(s.x, s.y, "#c0563b", 18);
+        this.eggHP -= 1;
+        this.eggInvuln = 0.9;
+        this.shake = Math.min(this.shake + 7, 10);
+        sound.play("hurt");
+        if (this.eggHP <= 0) {
+          this.fertilize();
+          return;
+        }
       }
     }
 
@@ -270,23 +523,52 @@ export class EggDefense {
         b.y > -20 && b.y < this.canvas.height + 20
     );
 
-    // Collisions.
+    // Collisions — boulders chip HP (brutes + bosses take several hits).
+    const pierce = this.buffs.pierce > 0;
     for (const b of this.bullets) {
       for (const s of this.sperms) {
-        if (!s.dead && Math.hypot(b.x - s.x, b.y - s.y) < s.r + b.r) {
+        if (s.dead || Math.hypot(b.x - s.x, b.y - s.y) >= s.r + b.r) continue;
+        s.hp -= this.bulletDmg;
+        s.hitFlash = 0.12;
+        s.kx += b.vx * (s.type === "boss" ? 0.002 : 0.012);
+        s.ky += b.vy * (s.type === "boss" ? 0.002 : 0.012);
+        if (s.hp <= 0) {
           s.dead = true;
-          // Piercing Rounds keep going; normal bullets die on impact.
-          if (this.buffs.pierce <= 0) b.life = 0;
-          this.kills++;
-          this.shake = Math.min(this.shake + 1.2, 4);
-          this.burst(s.x, s.y, "#9ad14f");
-          this.onKill?.(this.kills);
+          this.registerKill(s);
+        } else {
+          this.burst(s.x, s.y, "#e9c46a", 3); // sparks off armour
+        }
+        if (!pierce) {
+          b.life = 0;
+          break;
         }
       }
     }
+    this.bullets = this.bullets.filter((b) => b.life > 0);
     this.sperms = this.sperms.filter((s) => !s.dead);
+    if (this.pendingSpawns.length) {
+      this.sperms.push(...this.pendingSpawns);
+      this.pendingSpawns = [];
+    }
 
     this.updateParticles(dt);
+  }
+
+  pickType() {
+    // New predator kinds unlock as the waves escalate.
+    const wv = this.wave;
+    const pool = [["raptor", 1], ["runt", 0.9]];
+    if (wv >= 2) pool.push(["flyer", 0.5]);
+    if (wv >= 3) pool.push(["brute", 0.5]);
+    if (wv >= 4) pool.push(["charger", 0.45]);
+    if (wv >= 5) pool.push(["splitter", 0.5]);
+    const total = pool.reduce((s, p) => s + p[1], 0);
+    let r = Math.random() * total;
+    for (const [t, w] of pool) {
+      r -= w;
+      if (r <= 0) return t;
+    }
+    return "raptor";
   }
 
   spawnSperm() {
@@ -297,15 +579,28 @@ export class EggDefense {
       side === 1 ? { x: w + 20, y: Math.random() * h } :
       side === 2 ? { x: Math.random() * w, y: h + 20 } :
                    { x: -20, y: Math.random() * h };
+    const type = this.pickType();
+    const cfg = PREDATORS[type];
     this.sperms.push({
       ...pos,
-      r: 11 + Math.random() * 5,
-      // Slow crawlers at the start; combined with the time-based speedMul they
-      // ramp up to a frantic swarm.
-      speed: 26 + Math.random() * 22,
+      type,
+      r: rand(cfg.rMin, cfg.rMax),
+      // Slow crawlers at the start; the time-based speedMul ramps them up.
+      speed: rand(cfg.spd[0], cfg.spd[1]),
+      hp: cfg.hp,
+      maxhp: cfg.hp,
+      wob: cfg.wob,
+      color: cfg.color,
+      dark: cfg.dark,
       phase: Math.random() * TAU,
       angle: 0,
+      kx: 0,
+      ky: 0,
+      hitFlash: 0,
       dead: false,
+      split: false,
+      dashState: "seek",
+      dashClock: rand(2, 3.5),
     });
   }
 
@@ -329,6 +624,8 @@ export class EggDefense {
       });
     }
     this.shake = Math.min(this.shake + 0.25, 2);
+    this.muzzle = 0.05;
+    sound.play("thud", 70);
   }
 
   consumeShield() {
@@ -350,10 +647,12 @@ export class EggDefense {
     const c = this.center;
     this.burst(c.x, c.y, "#ffae57", 60);
     this.burst(c.x, c.y, "#c0563b", 40);
+    sound.play("hatch");
     // Drop the swarm + bullets so the HATCHING drama doesn't keep
     // simulating/drawing a huge late-game crowd every frame (was lagging).
     this.sperms = [];
     this.bullets = [];
+    this.shockwaves = [];
   }
 
   burst(x, y, color, n = 14) {
@@ -481,6 +780,19 @@ export class EggDefense {
     this.drawEgg(c);
     this.drawTurret(c);
     if (this.shield || this.shieldFlash > 0) this.drawShield(c);
+    this.drawRoarMeter(c);
+
+    // Egg HP pips (only when the egg can take more than one hit).
+    if (this.maxEggHP > 1) {
+      for (let i = 0; i < this.maxEggHP; i++) {
+        const px = c.x - (this.maxEggHP - 1) * 7 + i * 14;
+        const py = c.y - this.eggR - 30;
+        ctx.beginPath();
+        ctx.ellipse(px, py, 4, 5, 0, 0, TAU);
+        ctx.fillStyle = i < this.eggHP ? "#eef8d8" : "rgba(255,255,255,0.18)";
+        ctx.fill();
+      }
+    }
 
     // Ground shadows give the raptors + boulders a sense of height.
     ctx.fillStyle = "rgba(0,0,0,0.30)";
@@ -497,6 +809,18 @@ export class EggDefense {
 
     for (const s of this.sperms) this.drawSperm(s);
 
+    // Boss health bars (screen-aligned, above the beast).
+    for (const s of this.sperms) {
+      if (s.type !== "boss") continue;
+      const bw = s.r * 2;
+      const bx = s.x - s.r;
+      const by = s.y - s.r - 16;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(bx - 1, by - 1, bw + 2, 8);
+      ctx.fillStyle = "#ff6b4a";
+      ctx.fillRect(bx, by, bw * Math.max(0, s.hp / s.maxhp), 6);
+    }
+
     for (const b of this.bullets) {
       // Hurled boulders.
       ctx.beginPath();
@@ -509,12 +833,37 @@ export class EggDefense {
       ctx.fill();
     }
 
+    // Expanding ROAR shockwaves.
+    for (const sw of this.shockwaves) {
+      const fade = 1 - sw.r / sw.max;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, sw.r, 0, TAU);
+      ctx.strokeStyle = `rgba(255, 217, 138, ${fade * 0.9})`;
+      ctx.lineWidth = 10 * fade + 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, sw.r * 0.92, 0, TAU);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${fade * 0.5})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
     for (const p of this.particles) {
       ctx.globalAlpha = Math.max(p.life / p.maxLife, 0);
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, TAU);
       ctx.fillStyle = p.color;
       ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Floating score popups.
+    ctx.textAlign = "center";
+    for (const f of this.floaters) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.life / 0.9));
+      ctx.fillStyle = f.color;
+      ctx.font = "900 15px Nunito, sans-serif";
+      ctx.fillText(f.text, f.x, f.y);
     }
     ctx.globalAlpha = 1;
 
@@ -691,6 +1040,29 @@ export class EggDefense {
     ctx.restore();
   }
 
+  drawRoarMeter(c) {
+    const { ctx } = this;
+    const r = this.eggR + 16;
+    // Charge arc growing clockwise from the top.
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, -Math.PI / 2, -Math.PI / 2 + TAU * this.roar);
+    ctx.strokeStyle = this.roar >= 1 ? "#ffd98a" : "#c98b3a";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.stroke();
+
+    if (this.roar >= 1 && !this.over) {
+      const pulse = 0.6 + Math.sin(this.elapsed * 8) * 0.4;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = "#ffd98a";
+      ctx.font = "900 13px Nunito, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("SPACE · ROAR", c.x, c.y + r + 18);
+      ctx.restore();
+    }
+  }
+
   drawTurret(c) {
     const { ctx } = this;
     const a = Math.atan2(this.mouse.y - c.y, this.mouse.x - c.x);
@@ -714,6 +1086,12 @@ export class EggDefense {
     ctx.strokeStyle = "#6b5d45";
     ctx.lineWidth = 2;
     ctx.stroke();
+    if (this.muzzle > 0) {
+      ctx.beginPath();
+      ctx.arc(len + 4, 0, 11 * (this.muzzle / 0.05), 0, TAU);
+      ctx.fillStyle = "rgba(255, 220, 130, 0.8)";
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -725,8 +1103,8 @@ export class EggDefense {
     ctx.translate(s.x, s.y);
     ctx.rotate(s.angle);
 
-    const body = "#b5613a";
-    const dark = "#7a3d24";
+    const body = s.hitFlash > 0 ? "#fff3df" : s.color;
+    const dark = s.dark;
 
     // Wiggly tail trailing behind.
     ctx.beginPath();
@@ -769,6 +1147,23 @@ export class EggDefense {
     ctx.strokeStyle = dark;
     ctx.lineWidth = 1.6;
     ctx.stroke();
+
+    // Brutes wear armour plates and show remaining HP as notches.
+    if (s.type === "brute") {
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = r * 0.12;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.arc(i * r * 0.4, -r * 0.1, r * 0.34, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      }
+      for (let i = 0; i < s.hp; i++) {
+        ctx.fillStyle = "#ffd98a";
+        ctx.beginPath();
+        ctx.arc(-r * 0.4 + i * r * 0.4, -r * 0.95, r * 0.12, 0, TAU);
+        ctx.fill();
+      }
+    }
 
     // Head + snapping jaw up front.
     ctx.beginPath();

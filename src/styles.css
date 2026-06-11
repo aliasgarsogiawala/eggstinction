@@ -64,6 +64,43 @@ body {
 
 .hud-stats { display: flex; gap: 10px; align-items: center; }
 
+.mute-btn {
+  font-size: 17px;
+  line-height: 1;
+  background: var(--panel);
+  border: 3px solid #33402a;
+  border-radius: 14px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.08s;
+}
+.mute-btn:hover { border-color: var(--gold); transform: scale(1.05); }
+
+/* ---------- wave banner ---------- */
+.wave-banner {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 5;
+  animation: waveIn 0.4s ease-out, waveOut 0.5s ease-in 1.4s forwards;
+}
+.wave-text {
+  font-family: "Luckiest Guy", cursive;
+  font-size: clamp(30px, 6vw, 62px);
+  color: var(--gold);
+  -webkit-text-stroke: 2px #2a1c08;
+  text-shadow: 0 4px 22px #000b;
+}
+.wave-sub { font-weight: 800; opacity: 0.85; letter-spacing: 1px; }
+@keyframes waveIn {
+  from { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+@keyframes waveOut { to { opacity: 0; } }
+
 .networth {
   font-weight: 900;
   font-size: clamp(16px, 2vw, 24px);
@@ -112,6 +149,19 @@ body {
   font-size: 22px;
   text-shadow: 2px 2px 0 #000a;
   pointer-events: none;
+}
+.combo {
+  display: inline-block;
+  margin-left: 10px;
+  color: var(--gold);
+  font-size: 18px;
+  letter-spacing: 0.5px;
+  -webkit-text-stroke: 1px #3a2a10;
+  animation: comboPop 0.22s ease-out;
+}
+@keyframes comboPop {
+  from { transform: scale(1.7) rotate(-3deg); opacity: 0.3; }
+  to { transform: scale(1) rotate(0); opacity: 1; }
 }
 
 .hint {
@@ -335,6 +385,27 @@ body {
   color: var(--gold);
 }
 .shop-sub { opacity: 0.8; font-size: 14px; margin-bottom: 18px; line-height: 1.5; }
+
+.shop-tabs { display: flex; gap: 8px; margin: 8px 0 16px; }
+.shop-tab {
+  flex: 1;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--ink);
+  background: #16210f;
+  border: 2px solid #33402a;
+  border-radius: 10px;
+  padding: 9px;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.2s, background 0.2s;
+}
+.shop-tab:hover { transform: translateY(-1px); }
+.shop-tab-on { border-color: var(--gold); background: #24361c; color: var(--gold); }
+
+.up-pips { display: flex; gap: 4px; margin-top: 7px; }
+.up-pip { width: 16px; height: 6px; border-radius: 3px; background: #33402a; }
+.up-pip.on { background: var(--green); }
 
 .shop-grid {
   display: grid;

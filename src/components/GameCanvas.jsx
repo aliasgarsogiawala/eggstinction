@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { EggDefense } from "../game/engine";
 import { POWERUPS } from "../game/powerups";
 
-export default function GameCanvas({ onFertilized, inventory = {}, onConsume, paused = false }) {
+export default function GameCanvas({
+  onFertilized,
+  inventory = {},
+  onConsume,
+  upgrades = {},
+  onWave,
+  paused = false,
+}) {
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
   const [kills, setKills] = useState(0);
+  const [combo, setCombo] = useState(0);
   const [fertilized, setFertilized] = useState(false);
 
   useEffect(() => {
@@ -18,7 +26,12 @@ export default function GameCanvas({ onFertilized, inventory = {}, onConsume, pa
     window.addEventListener("resize", fit);
 
     const game = new EggDefense(canvas, {
-      onKill: setKills,
+      upgrades,
+      onWave,
+      onKill: (k, c) => {
+        setKills(k);
+        setCombo(c || 0);
+      },
       onFertilized: (stats) => {
         setFertilized(true);
         setTimeout(() => onFertilized(stats), 900);
@@ -47,9 +60,14 @@ export default function GameCanvas({ onFertilized, inventory = {}, onConsume, pa
     onConsume?.(key);
   };
 
-  // Number keys 1–5 map to the powerup slots.
+  // Number keys 1–5 fire powerups; Space unleashes the ROAR.
   useEffect(() => {
     const onKey = (e) => {
+      if (e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        gameRef.current?.roarTrigger();
+        return;
+      }
       const n = Number(e.key);
       if (n >= 1 && n <= POWERUPS.length) use(POWERUPS[n - 1].key);
     };
@@ -61,8 +79,15 @@ export default function GameCanvas({ onFertilized, inventory = {}, onConsume, pa
   return (
     <div className={`game-stage ${fertilized ? "shake-hard" : ""}`}>
       <canvas ref={canvasRef} className="game-canvas" />
-      <div className="kill-counter">🦴 {kills}</div>
-      <div className="hint">hold to hurl boulders · Esc to pause</div>
+      <div className="kill-counter">
+        🦴 {kills}
+        {combo >= 3 && (
+          <span key={combo} className="combo">
+            ×{combo} COMBO
+          </span>
+        )}
+      </div>
+      <div className="hint">hold to hurl · Space to ROAR · 1–5 powerups · Esc pause</div>
 
       <div className="powerbar">
         {POWERUPS.map((p, i) => {

@@ -75,12 +75,16 @@ export const rollGacha = mutation({
   },
   handler: async (ctx, args) => {
     const outcome = rollOutcome(args.killStreak, args.survivedSeconds ?? 0);
-    const killEarnings = args.killStreak * KILL_REWARD;
-    const totalDelta = outcome.delta + killEarnings;
     const existing = await ctx.db
       .query("players")
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
       .unique();
+    // The DNA Splicer upgrade boosts DNA earned per kill.
+    const greed = existing?.upgrades?.greed ?? 0;
+    const killEarnings = Math.round(
+      args.killStreak * KILL_REWARD * (1 + 0.25 * greed)
+    );
+    const totalDelta = outcome.delta + killEarnings;
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -200,6 +204,59 @@ export const buyPowerup = mutation({
   },
 });
 
+/** Server-authoritative meta-upgrade prices (mirror src/game/upgrades.js). */
+const UPGRADE_DEFS: Record<string, { base: number; max: number }> = {
+  damage: { base: 60_000, max: 4 },
+  firerate: { base: 70_000, max: 4 },
+  roarpower: { base: 80_000, max: 4 },
+  egghp: { base: 120_000, max: 3 },
+  greed: { base: 90_000, max: 4 },
+};
+
+/** Buy the next level of a permanent upgrade. Price scales with level. */
+export const buyUpgrade = mutation({
+  args: {
+    playerId: v.string(),
+    name: v.string(),
+    upgrade: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const def = UPGRADE_DEFS[args.upgrade];
+    if (!def) throw new Error("Unknown upgrade");
+
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+
+    const upgrades = { ...(existing?.upgrades ?? {}) };
+    const level = upgrades[args.upgrade] ?? 0;
+    if (level >= def.max) return { ok: false as const, reason: "maxed" as const };
+
+    const cost = def.base * (level + 1);
+    const netWorth = existing?.netWorth ?? 0;
+    if (netWorth < cost) return { ok: false as const, reason: "broke" as const };
+
+    upgrades[args.upgrade] = level + 1;
+    const nextWorth = netWorth - cost;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { name: args.name, netWorth: nextWorth, upgrades });
+    } else {
+      await ctx.db.insert("players", {
+        playerId: args.playerId,
+        name: args.name,
+        netWorth: nextWorth,
+        babies: 0,
+        totalKills: 0,
+        bestKillStreak: 0,
+        upgrades,
+      });
+    }
+    return { ok: true as const, netWorth: nextWorth, upgrades };
+  },
+});
+
 /** Spend one charge of a powerup (when the player activates it in-game). */
 export const consumePowerup = mutation({
   args: {
@@ -241,6 +298,7 @@ export const getPlayer = query({
       totalKills: p.totalKills ?? 0,
       bestKillStreak: p.bestKillStreak ?? 0,
       inventory: p.inventory ?? {},
+      upgrades: p.upgrades ?? {},
     };
   },
 });

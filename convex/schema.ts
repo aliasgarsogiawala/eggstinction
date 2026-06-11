@@ -12,6 +12,8 @@ export default defineSchema({
     bestKillStreak: v.optional(v.number()), // most kills in a single run
     // Stackable consumable powerup charges, keyed by powerup → count.
     inventory: v.optional(v.record(v.string(), v.number())),
+    // Permanent meta-progression upgrade levels, keyed by upgrade → level.
+    upgrades: v.optional(v.record(v.string(), v.number())),
     powerups: v.optional(v.array(v.string())), // legacy field (pre-inventory docs)
     lastOutcome: v.optional(v.string()),
   })

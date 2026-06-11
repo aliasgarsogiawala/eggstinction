@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import GameCanvas from "./components/GameCanvas";
@@ -9,6 +9,8 @@ import Marketplace from "./components/Marketplace";
 import Backdrop from "./components/Backdrop";
 import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
+import { upgradeByKey, upgradeCost } from "./game/upgrades";
+import { sound } from "./game/sound";
 
 // ---------- anonymous identity ----------
 function getPlayerId() {
@@ -43,6 +45,7 @@ function OnlineApp() {
   const rollGacha = useMutation(api.leaderboard.rollGacha);
   const buyPowerup = useMutation(api.leaderboard.buyPowerup);
   const consumePowerup = useMutation(api.leaderboard.consumePowerup);
+  const buyUpgrade = useMutation(api.leaderboard.buyUpgrade);
 
   const doRoll = useCallback(
     (kills, seconds) =>
@@ -57,6 +60,10 @@ function OnlineApp() {
     (powerup) => consumePowerup({ playerId, powerup }),
     [consumePowerup, playerId]
   );
+  const doBuyUpgrade = useCallback(
+    (upgrade) => buyUpgrade({ playerId, name, upgrade }),
+    [buyUpgrade, playerId, name]
+  );
 
   return (
     <GameShell
@@ -67,9 +74,11 @@ function OnlineApp() {
       netWorth={player?.netWorth ?? 0}
       totalKills={player?.totalKills ?? 0}
       inventory={player?.inventory ?? {}}
+      upgrades={player?.upgrades ?? {}}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
+      doBuyUpgrade={doBuyUpgrade}
     />
   );
 }
@@ -87,6 +96,13 @@ function OfflineApp() {
   const [inventory, setInventory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("sdg_inventory") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [upgrades, setUpgrades] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sdg_upgrades") || "{}");
     } catch {
       return {};
     }
@@ -137,6 +153,25 @@ function OfflineApp() {
     [inventory]
   );
 
+  const doBuyUpgrade = useCallback(
+    async (key) => {
+      const u = upgradeByKey(key);
+      if (!u) return { ok: false, reason: "unknown" };
+      const level = upgrades[key] ?? 0;
+      if (level >= u.max) return { ok: false, reason: "maxed" };
+      const cost = upgradeCost(u.base, level);
+      if (netWorth < cost) return { ok: false, reason: "broke" };
+      const next = { ...upgrades, [key]: level + 1 };
+      const nextWorth = netWorth - cost;
+      setNetWorth(nextWorth);
+      localStorage.setItem("sdg_netWorth", String(nextWorth));
+      setUpgrades(next);
+      localStorage.setItem("sdg_upgrades", JSON.stringify(next));
+      return { ok: true };
+    },
+    [netWorth, upgrades]
+  );
+
   return (
     <GameShell
       connected={false}
@@ -146,9 +181,11 @@ function OfflineApp() {
       netWorth={netWorth}
       totalKills={totalKills}
       inventory={inventory}
+      upgrades={upgrades}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
+      doBuyUpgrade={doBuyUpgrade}
     />
   );
 }
@@ -162,9 +199,11 @@ function GameShell({
   netWorth,
   totalKills,
   inventory,
+  upgrades,
   doRoll,
   doBuy,
   doConsume,
+  doBuyUpgrade,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
@@ -172,12 +211,40 @@ function GameShell({
   const [resultKey, setResultKey] = useState(null);
   const [paused, setPaused] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [banner, setBanner] = useState(null);
+  const [muted, setMuted] = useState(() => !sound.enabled);
+  const bannerTimer = useRef(null);
 
   const goHome = useCallback(() => {
     setPaused(false);
     setShopOpen(false);
     setResultKey(null);
     setPhase("menu");
+  }, []);
+
+  const startPlaying = useCallback(() => {
+    sound.unlock();
+    sound.startMusic();
+    sound.play("ui");
+    setPhase("playing");
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    const en = sound.toggle();
+    setMuted(!en);
+  }, []);
+
+  const onWave = useCallback((info) => {
+    if (info.cleared) {
+      setBanner({ text: `WAVE ${info.wave} CLEARED`, sub: "brace yourself…" });
+    } else {
+      setBanner({
+        text: info.boss ? "⚠ BOSS WAVE" : `WAVE ${info.wave}`,
+        sub: info.boss ? "an Alpha approaches" : "",
+      });
+    }
+    clearTimeout(bannerTimer.current);
+    bannerTimer.current = setTimeout(() => setBanner(null), 1900);
   }, []);
 
   // Esc pauses/resumes during play; also backs out of the marketplace.
@@ -219,6 +286,13 @@ function GameShell({
         <header className="hud">
           <h1 className="logo">🦖 EGGSTINCTION</h1>
           <div className="hud-stats">
+            <button
+              className="mute-btn"
+              onClick={toggleMute}
+              title={muted ? "Unmute" : "Mute"}
+            >
+              {muted ? "🔇" : "🔊"}
+            </button>
             <div className="destroyer" title="Predators culled (lifetime)">
               🦴 {totalKills.toLocaleString("en-US")}
             </div>
@@ -248,9 +322,12 @@ function GameShell({
               <br />
               <strong>T-Rex? Triceratops? …or just a sentient rock?</strong>
               <br />
-              Spend DNA in the 🦴 Bone Market on charges, then unleash them
-              mid-run with keys <strong>1–5</strong>. Let a predator get close
-              and <strong>time slows down</strong> for the clutch save.
+              Chain kills for a <strong>COMBO</strong>, which charges your{" "}
+              <strong>ROAR</strong> — hit <strong>Space</strong> to blast the
+              whole swarm back. Watch for armoured <strong>brutes</strong> that
+              soak several hits. Spend DNA in the 🦴 Bone Market on charges
+              (keys <strong>1–5</strong>), and let a predator get close for a{" "}
+              <strong>slow-mo</strong> clutch save.
             </p>
             <label className="name-row">
               I am&nbsp;
@@ -265,7 +342,7 @@ function GameShell({
               />
             </label>
             <div className="menu-buttons">
-              <button className="btn-big" onClick={() => setPhase("playing")}>
+              <button className="btn-big" onClick={startPlaying}>
                 DEFEND THE NEST
               </button>
               <button className="btn-shop" onClick={() => setShopOpen(true)}>
@@ -280,8 +357,17 @@ function GameShell({
             onFertilized={onFertilized}
             inventory={inventory}
             onConsume={doConsume}
+            upgrades={upgrades}
+            onWave={onWave}
             paused={paused || shopOpen}
           />
+        )}
+
+        {phase === "playing" && banner && (
+          <div className="wave-banner" key={banner.text}>
+            <div className="wave-text">{banner.text}</div>
+            {banner.sub && <div className="wave-sub">{banner.sub}</div>}
+          </div>
         )}
         {(phase === "rolling" || phase === "result") && (
           <div className="game-stage stage-dim" />
@@ -318,7 +404,7 @@ function GameShell({
             netWorth={netWorth}
             onAgain={() => {
               setResultKey(null);
-              setPhase("playing");
+              startPlaying();
             }}
             onHome={goHome}
           />
@@ -328,7 +414,9 @@ function GameShell({
           <Marketplace
             netWorth={netWorth}
             inventory={inventory}
+            upgrades={upgrades}
             onBuy={doBuy}
+            onBuyUpgrade={doBuyUpgrade}
             onClose={() => setShopOpen(false)}
           />
         )}
