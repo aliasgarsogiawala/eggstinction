@@ -47,6 +47,81 @@ export class EggDefense {
     // Active timed buffs (seconds remaining), set by activate().
     this.buffs = { rapidfire: 0, tripleshot: 0, slowfield: 0, pierce: 0 };
     this.timeScale = 1; // slow-mo factor applied to swimmer movement
+    // Atmospheric layer (cosmetic): drifting ash, sky meteors, lightning.
+    this.ambient = [];
+    this.skyMeteors = [];
+    this.flash = 0;
+    this.meteorTimer = 2.5 + Math.random() * 4;
+    this.lightTimer = 7 + Math.random() * 8;
+  }
+
+  // Drifting ash, the occasional meteor streak, and distant lightning. Runs
+  // even through the hatching drama so the world always feels alive.
+  updateAtmosphere(dt) {
+    const w = this.canvas.width, h = this.canvas.height;
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2);
+
+    if (Math.random() < dt * 7 && this.ambient.length < 70) {
+      this.ambient.push({
+        x: Math.random() * w,
+        y: -10,
+        vx: -14 + Math.random() * 34,
+        vy: 16 + Math.random() * 30,
+        r: 0.8 + Math.random() * 2,
+        sway: Math.random() * TAU,
+        life: 8 + Math.random() * 8,
+      });
+    }
+    for (const a of this.ambient) {
+      a.sway += dt;
+      a.x += (a.vx + Math.sin(a.sway) * 7) * dt;
+      a.y += a.vy * dt;
+      a.life -= dt;
+    }
+    this.ambient = this.ambient.filter((a) => a.y < h + 10 && a.life > 0);
+
+    this.meteorTimer -= dt;
+    if (this.meteorTimer <= 0) {
+      this.meteorTimer = 3 + Math.random() * 5;
+      this.skyMeteors.push({
+        x: Math.random() * w * 0.8,
+        y: -30,
+        vx: 200 + Math.random() * 220,
+        vy: 280 + Math.random() * 220,
+        trail: [],
+        life: 2.2,
+      });
+    }
+    for (const m of this.skyMeteors) {
+      m.trail.push({ x: m.x, y: m.y });
+      if (m.trail.length > 10) m.trail.shift();
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.life -= dt;
+    }
+    this.skyMeteors = this.skyMeteors.filter((m) => m.life > 0 && m.y < h + 30);
+
+    this.lightTimer -= dt;
+    if (this.lightTimer <= 0) {
+      this.lightTimer = 8 + Math.random() * 10;
+      this.flash = 0.4 + Math.random() * 0.3;
+    }
+  }
+
+  ensureGround() {
+    const w = this.canvas.width, h = this.canvas.height;
+    if (this.ground && this.ground.w === w && this.ground.h === h) return;
+    const rocks = [];
+    const n = Math.round((w * h) / 24000);
+    const cx = w / 2, cy = h / 2;
+    for (let i = 0; i < n; i++) {
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      // Keep the nest area clear.
+      if (Math.hypot(x - cx, y - cy) < this.eggR * 1.6) continue;
+      rocks.push({ x, y, r: 2 + Math.random() * 6, a: Math.random() * TAU, light: Math.random() < 0.4 });
+    }
+    this.ground = { w, h, rocks };
   }
 
   setPaused(p) {
@@ -106,6 +181,7 @@ export class EggDefense {
   update(dt) {
     this.elapsed += dt;
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30);
+    this.updateAtmosphere(dt);
 
     if (this.over) {
       // Let the FERTILIZED drama play out, then hand off to React.
@@ -327,6 +403,51 @@ export class EggDefense {
     ctx.fillStyle = g;
     ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
 
+    // --- ground texture + atmosphere (behind the action) ---
+    this.ensureGround();
+    for (const rk of this.ground.rocks) {
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = rk.light ? "#2c3a24" : "#0a1209";
+      ctx.beginPath();
+      ctx.ellipse(rk.x, rk.y, rk.r, rk.r * 0.55, rk.a, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Sky meteors streaking across the arena.
+    for (const m of this.skyMeteors) {
+      if (m.trail.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(m.trail[0].x, m.trail[0].y);
+        for (const p of m.trail) ctx.lineTo(p.x, p.y);
+        ctx.lineTo(m.x, m.y);
+        ctx.strokeStyle = "rgba(255,200,130,0.40)";
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 2.5, 0, TAU);
+      ctx.fillStyle = "#fff1c8";
+      ctx.fill();
+    }
+
+    // Drifting ash.
+    ctx.fillStyle = "#b9b3a8";
+    for (const a of this.ambient) {
+      ctx.globalAlpha = Math.min(0.4, a.life / 6);
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Distant lightning flash.
+    if (this.flash > 0) {
+      ctx.fillStyle = `rgba(200,220,255,${this.flash * 0.14})`;
+      ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
+    }
+
     // Slow-mo vignette — cool blue edges + a label when time dilates.
     if (this.timeScale < 0.92 && !this.over) {
       const amt = (0.92 - this.timeScale) / 0.62; // 0..1
@@ -361,6 +482,19 @@ export class EggDefense {
     this.drawTurret(c);
     if (this.shield || this.shieldFlash > 0) this.drawShield(c);
 
+    // Ground shadows give the raptors + boulders a sense of height.
+    ctx.fillStyle = "rgba(0,0,0,0.30)";
+    for (const s of this.sperms) {
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y + s.r * 0.7, s.r * 0.95, s.r * 0.42, 0, 0, TAU);
+      ctx.fill();
+    }
+    for (const b of this.bullets) {
+      ctx.beginPath();
+      ctx.ellipse(b.x, b.y + b.r * 0.9, b.r * 1.1, b.r * 0.5, 0, 0, TAU);
+      ctx.fill();
+    }
+
     for (const s of this.sperms) this.drawSperm(s);
 
     for (const b of this.bullets) {
@@ -384,8 +518,18 @@ export class EggDefense {
     }
     ctx.globalAlpha = 1;
 
+    // Edge vignette — sinks the arena into a shadowed bowl for depth.
+    const vig = ctx.createRadialGradient(
+      c.x, c.y, Math.min(canvas.width, canvas.height) * 0.26,
+      c.x, c.y, Math.max(canvas.width, canvas.height) * 0.72
+    );
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.55)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
+
     if (this.over) {
-      ctx.fillStyle = "rgba(255, 209, 102, 0.18)";
+      ctx.fillStyle = "rgba(255, 170, 87, 0.18)";
       ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
     }
     ctx.restore();

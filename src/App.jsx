@@ -6,6 +6,7 @@ import GachaRoulette from "./components/GachaRoulette";
 import ResultCard from "./components/ResultCard";
 import Leaderboard from "./components/Leaderboard";
 import Marketplace from "./components/Marketplace";
+import Backdrop from "./components/Backdrop";
 import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
 
@@ -211,7 +212,9 @@ function GameShell({
   );
 
   return (
-    <div className="layout">
+    <>
+      <Backdrop />
+      <div className="layout">
       <main className="play-area">
         <header className="hud">
           <h1 className="logo">🦖 EGGSTINCTION</h1>
@@ -332,6 +335,7 @@ function GameShell({
       </main>
 
       <Leaderboard playerId={playerId} connected={connected} />
-    </div>
+      </div>
+    </>
   );
 }
