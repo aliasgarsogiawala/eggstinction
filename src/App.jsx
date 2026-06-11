@@ -7,6 +7,8 @@ import ResultCard from "./components/ResultCard";
 import Leaderboard from "./components/Leaderboard";
 import Marketplace from "./components/Marketplace";
 import Backdrop from "./components/Backdrop";
+import Preserve from "./components/Preserve";
+import { decorByKey } from "./game/decor";
 import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
 import { upgradeByKey, upgradeCost } from "./game/upgrades";
@@ -46,6 +48,8 @@ function OnlineApp() {
   const buyPowerup = useMutation(api.leaderboard.buyPowerup);
   const consumePowerup = useMutation(api.leaderboard.consumePowerup);
   const buyUpgrade = useMutation(api.leaderboard.buyUpgrade);
+  const addDecoration = useMutation(api.leaderboard.addDecoration);
+  const updatePreserve = useMutation(api.leaderboard.updatePreserve);
 
   const doRoll = useCallback(
     (kills, seconds) =>
@@ -64,6 +68,14 @@ function OnlineApp() {
     (upgrade) => buyUpgrade({ playerId, name, upgrade }),
     [buyUpgrade, playerId, name]
   );
+  const doAddDecoration = useCallback(
+    (decor) => addDecoration({ playerId, name, decor }),
+    [addDecoration, playerId, name]
+  );
+  const doSavePreserve = useCallback(
+    (items) => updatePreserve({ playerId, items }),
+    [updatePreserve, playerId]
+  );
 
   return (
     <GameShell
@@ -75,10 +87,13 @@ function OnlineApp() {
       totalKills={player?.totalKills ?? 0}
       inventory={player?.inventory ?? {}}
       upgrades={player?.upgrades ?? {}}
+      preserve={player?.preserve ?? []}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
       doBuyUpgrade={doBuyUpgrade}
+      doAddDecoration={doAddDecoration}
+      doSavePreserve={doSavePreserve}
     />
   );
 }
@@ -105,6 +120,13 @@ function OfflineApp() {
       return JSON.parse(localStorage.getItem("sdg_upgrades") || "{}");
     } catch {
       return {};
+    }
+  });
+  const [preserve, setPreserve] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sdg_preserve") || "[]");
+    } catch {
+      return [];
     }
   });
 
@@ -172,6 +194,25 @@ function OfflineApp() {
     [netWorth, upgrades]
   );
 
+  const doAddDecoration = useCallback(
+    async (key) => {
+      const d = decorByKey(key);
+      if (!d) return { ok: false };
+      if (netWorth < d.cost) return { ok: false, reason: "broke" };
+      const nextWorth = netWorth - d.cost;
+      setNetWorth(nextWorth);
+      localStorage.setItem("sdg_netWorth", String(nextWorth));
+      return { ok: true };
+    },
+    [netWorth]
+  );
+
+  const doSavePreserve = useCallback(async (items) => {
+    setPreserve(items);
+    localStorage.setItem("sdg_preserve", JSON.stringify(items));
+    return { ok: true };
+  }, []);
+
   return (
     <GameShell
       connected={false}
@@ -182,10 +223,13 @@ function OfflineApp() {
       totalKills={totalKills}
       inventory={inventory}
       upgrades={upgrades}
+      preserve={preserve}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
       doBuyUpgrade={doBuyUpgrade}
+      doAddDecoration={doAddDecoration}
+      doSavePreserve={doSavePreserve}
     />
   );
 }
@@ -200,10 +244,13 @@ function GameShell({
   totalKills,
   inventory,
   upgrades,
+  preserve,
   doRoll,
   doBuy,
   doConsume,
   doBuyUpgrade,
+  doAddDecoration,
+  doSavePreserve,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
@@ -211,6 +258,7 @@ function GameShell({
   const [resultKey, setResultKey] = useState(null);
   const [paused, setPaused] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [preserveOpen, setPreserveOpen] = useState(false);
   const [banner, setBanner] = useState(null);
   const [muted, setMuted] = useState(() => !sound.enabled);
   const bannerTimer = useRef(null);
@@ -348,6 +396,15 @@ function GameShell({
               <button className="btn-shop" onClick={() => setShopOpen(true)}>
                 🦴 BONE MARKET
               </button>
+              <button
+                className="btn-shop btn-preserve"
+                onClick={() => {
+                  sound.unlock();
+                  setPreserveOpen(true);
+                }}
+              >
+                🏞️ PRESERVE
+              </button>
             </div>
           </div>
         )}
@@ -424,6 +481,16 @@ function GameShell({
 
       <Leaderboard playerId={playerId} connected={connected} />
       </div>
+
+      {preserveOpen && (
+        <Preserve
+          netWorth={netWorth}
+          items={preserve}
+          onAdd={doAddDecoration}
+          onSave={doSavePreserve}
+          onClose={() => setPreserveOpen(false)}
+        />
+      )}
     </>
   );
 }

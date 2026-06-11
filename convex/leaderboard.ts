@@ -282,6 +282,57 @@ export const consumePowerup = mutation({
   },
 });
 
+/** Server-authoritative decoration prices (mirror src/game/decor.js). */
+const DECOR_COSTS: Record<string, number> = {
+  fern: 2_000, cycad: 3_000, bush: 3_000, palm: 4_000, conifer: 4_000,
+  rock: 1_000, boulder: 2_500, pond: 8_000, nest: 6_000,
+  ptero: 12_000, raptor: 15_000, stego: 25_000, trike: 30_000,
+  bronto: 40_000, trex: 50_000,
+};
+
+/** Spend DNA to add a decoration to the preserve (price enforced server-side). */
+export const addDecoration = mutation({
+  args: { playerId: v.string(), name: v.string(), decor: v.string() },
+  handler: async (ctx, args) => {
+    const cost = DECOR_COSTS[args.decor];
+    if (cost === undefined) throw new Error("Unknown decoration");
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+    const netWorth = existing?.netWorth ?? 0;
+    if (netWorth < cost) return { ok: false as const, reason: "broke" as const };
+
+    const nextWorth = netWorth - cost;
+    if (existing) {
+      await ctx.db.patch(existing._id, { name: args.name, netWorth: nextWorth });
+    } else {
+      await ctx.db.insert("players", {
+        playerId: args.playerId, name: args.name, netWorth: nextWorth,
+        babies: 0, totalKills: 0, bestKillStreak: 0,
+      });
+    }
+    return { ok: true as const, netWorth: nextWorth };
+  },
+});
+
+/** Save the preserve layout (positions). Capped to keep documents sane. */
+export const updatePreserve = mutation({
+  args: {
+    playerId: v.string(),
+    items: v.array(v.object({ k: v.string(), x: v.number(), y: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+    if (!existing) return { ok: false as const };
+    await ctx.db.patch(existing._id, { preserve: args.items.slice(0, 120) });
+    return { ok: true as const };
+  },
+});
+
 /** Fetch the current player's persistent record (net worth carries over). */
 export const getPlayer = query({
   args: { playerId: v.string() },
@@ -299,6 +350,7 @@ export const getPlayer = query({
       bestKillStreak: p.bestKillStreak ?? 0,
       inventory: p.inventory ?? {},
       upgrades: p.upgrades ?? {},
+      preserve: p.preserve ?? [],
     };
   },
 });

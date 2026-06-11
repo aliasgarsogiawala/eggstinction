@@ -14,6 +14,10 @@ export default defineSchema({
     inventory: v.optional(v.record(v.string(), v.number())),
     // Permanent meta-progression upgrade levels, keyed by upgrade → level.
     upgrades: v.optional(v.record(v.string(), v.number())),
+    // The player's Prehistoric Preserve — placed decorations (normalised coords).
+    preserve: v.optional(
+      v.array(v.object({ k: v.string(), x: v.number(), y: v.number() }))
+    ),
     powerups: v.optional(v.array(v.string())), // legacy field (pre-inventory docs)
     lastOutcome: v.optional(v.string()),
   })
