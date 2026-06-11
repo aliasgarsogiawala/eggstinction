@@ -43,8 +43,8 @@ export const rollGacha = mutation({
         name: args.name,
         netWorth: existing.netWorth + outcome.delta,
         babies: existing.babies + 1,
-        totalKills: existing.totalKills + args.killStreak,
-        bestKillStreak: Math.max(existing.bestKillStreak, args.killStreak),
+        totalKills: (existing.totalKills ?? 0) + args.killStreak,
+        bestKillStreak: Math.max(existing.bestKillStreak ?? 0, args.killStreak),
         lastOutcome: outcome.key,
       });
     } else {
@@ -55,6 +55,7 @@ export const rollGacha = mutation({
         babies: 1,
         totalKills: args.killStreak,
         bestKillStreak: args.killStreak,
+        powerups: [],
         lastOutcome: outcome.key,
       });
     }
@@ -93,10 +94,68 @@ export const topDestroyers = query({
     return top.map((p) => ({
       playerId: p.playerId,
       name: p.name,
-      totalKills: p.totalKills,
-      bestKillStreak: p.bestKillStreak,
+      totalKills: p.totalKills ?? 0,
+      bestKillStreak: p.bestKillStreak ?? 0,
       lastOutcome: p.lastOutcome,
     }));
+  },
+});
+
+/** Server-authoritative powerup prices (mirror src/game/powerups.js). */
+const POWERUP_COSTS: Record<string, number> = {
+  rapidfire: 80_000,
+  tripleshot: 200_000,
+  slowfield: 150_000,
+  pierce: 175_000,
+  shield: 300_000,
+};
+
+/** Spend Net Worth to unlock a powerup. Price + ownership enforced server-side. */
+export const buyPowerup = mutation({
+  args: {
+    playerId: v.string(),
+    name: v.string(),
+    powerup: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cost = POWERUP_COSTS[args.powerup];
+    if (cost === undefined) throw new Error("Unknown powerup");
+
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+
+    const owned = existing?.powerups ?? [];
+    if (owned.includes(args.powerup)) {
+      return { ok: false, reason: "owned" as const };
+    }
+    const netWorth = existing?.netWorth ?? 0;
+    if (netWorth < cost) {
+      return { ok: false, reason: "broke" as const };
+    }
+
+    const nextWorth = netWorth - cost;
+    const nextPowerups = [...owned, args.powerup];
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        name: args.name,
+        netWorth: nextWorth,
+        powerups: nextPowerups,
+      });
+    } else {
+      await ctx.db.insert("players", {
+        playerId: args.playerId,
+        name: args.name,
+        netWorth: nextWorth,
+        babies: 0,
+        totalKills: 0,
+        bestKillStreak: 0,
+        powerups: nextPowerups,
+      });
+    }
+    return { ok: true as const, netWorth: nextWorth, powerups: nextPowerups };
   },
 });
 
@@ -113,8 +172,9 @@ export const getPlayer = query({
       name: p.name,
       netWorth: p.netWorth,
       babies: p.babies,
-      totalKills: p.totalKills,
-      bestKillStreak: p.bestKillStreak,
+      totalKills: p.totalKills ?? 0,
+      bestKillStreak: p.bestKillStreak ?? 0,
+      powerups: p.powerups ?? [],
     };
   },
 });

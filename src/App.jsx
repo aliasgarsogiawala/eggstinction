@@ -1,11 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import GameCanvas from "./components/GameCanvas";
 import GachaRoulette from "./components/GachaRoulette";
 import ResultCard from "./components/ResultCard";
 import Leaderboard from "./components/Leaderboard";
+import Marketplace from "./components/Marketplace";
 import { rollLocal, fmtMoney } from "./game/outcomes";
+import { powerupByKey } from "./game/powerups";
 
 // ---------- anonymous identity ----------
 function getPlayerId() {
@@ -38,10 +40,15 @@ function OnlineApp() {
   const [name, setName] = useState(defaultName);
   const player = useQuery(api.leaderboard.getPlayer, { playerId });
   const rollGacha = useMutation(api.leaderboard.rollGacha);
+  const buyPowerup = useMutation(api.leaderboard.buyPowerup);
 
   const doRoll = useCallback(
     (kills) => rollGacha({ playerId, name, killStreak: kills }),
     [rollGacha, playerId, name]
+  );
+  const doBuy = useCallback(
+    (powerup) => buyPowerup({ playerId, name, powerup }),
+    [buyPowerup, playerId, name]
   );
 
   return (
@@ -52,7 +59,9 @@ function OnlineApp() {
       setName={setName}
       netWorth={player?.netWorth ?? 0}
       totalKills={player?.totalKills ?? 0}
+      powerups={player?.powerups ?? []}
       doRoll={doRoll}
+      doBuy={doBuy}
     />
   );
 }
@@ -67,6 +76,13 @@ function OfflineApp() {
   const [totalKills, setTotalKills] = useState(() =>
     Number(localStorage.getItem("sdg_totalKills") || 0)
   );
+  const [powerups, setPowerups] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sdg_powerups") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   const doRoll = useCallback(async (kills) => {
     const o = rollLocal();
@@ -83,6 +99,23 @@ function OfflineApp() {
     return { outcomeKey: o.key, delta: o.delta };
   }, []);
 
+  const doBuy = useCallback(
+    async (key) => {
+      const p = powerupByKey(key);
+      if (!p) return { ok: false, reason: "unknown" };
+      if (powerups.includes(key)) return { ok: false, reason: "owned" };
+      if (netWorth < p.cost) return { ok: false, reason: "broke" };
+      const nextWorth = netWorth - p.cost;
+      const nextPowerups = [...powerups, key];
+      setNetWorth(nextWorth);
+      localStorage.setItem("sdg_netWorth", String(nextWorth));
+      setPowerups(nextPowerups);
+      localStorage.setItem("sdg_powerups", JSON.stringify(nextPowerups));
+      return { ok: true };
+    },
+    [netWorth, powerups]
+  );
+
   return (
     <GameShell
       connected={false}
@@ -91,16 +124,51 @@ function OfflineApp() {
       setName={setName}
       netWorth={netWorth}
       totalKills={totalKills}
+      powerups={powerups}
       doRoll={doRoll}
+      doBuy={doBuy}
     />
   );
 }
 
 // ---------- shared shell / phase machine ----------
-function GameShell({ connected, playerId, name, setName, netWorth, totalKills, doRoll }) {
+function GameShell({
+  connected,
+  playerId,
+  name,
+  setName,
+  netWorth,
+  totalKills,
+  powerups,
+  doRoll,
+  doBuy,
+}) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
   const [resultKey, setResultKey] = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
+
+  const goHome = useCallback(() => {
+    setPaused(false);
+    setShopOpen(false);
+    setResultKey(null);
+    setPhase("menu");
+  }, []);
+
+  // Esc pauses/resumes during play; also backs out of the marketplace.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (shopOpen) {
+        setShopOpen(false);
+        return;
+      }
+      if (phase === "playing") setPaused((p) => !p);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, shopOpen]);
 
   const onFertilized = useCallback(
     async ({ kills }) => {
@@ -124,7 +192,7 @@ function GameShell({ connected, playerId, name, setName, netWorth, totalKills, d
         <header className="hud">
           <h1 className="logo">🥚 SAVEDATEGG</h1>
           <div className="hud-stats">
-            <div className="destroyer" title="Lifetime sperm destroyed">
+            <div className="destroyer" title="Lifetime swimmers destroyed">
               💥 {totalKills.toLocaleString("en-US")}
             </div>
             <div className={`networth ${netWorth < 0 ? "networth-broke" : ""}`}>
@@ -138,10 +206,10 @@ function GameShell({ connected, playerId, name, setName, netWorth, totalKills, d
             <div className="menu-egg">🥚</div>
             <p className="menu-pitch">
               <strong>How to play:</strong> a turret sits on your egg and aims
-              wherever you point. <strong>Hold the mouse to fire.</strong> Sperm
-              swim in from every edge — slow at first, then faster and faster.
-              Every one you pop adds to your <strong>💥 Sperm Destroyer</strong>{" "}
-              score.
+              wherever you point. <strong>Hold the mouse to fire.</strong>{" "}
+              Swimmers race in from every edge — slow at first, then faster and
+              faster. Every one you pop adds to your{" "}
+              <strong>💥 Swimmer Destroyer</strong> score.
               <br />
               When (not if) the egg gets fertilized, you spin the gacha for the
               kid's career and your <strong>💰 Net Worth</strong>.
@@ -160,15 +228,45 @@ function GameShell({ connected, playerId, name, setName, netWorth, totalKills, d
                 }}
               />
             </label>
-            <button className="btn-big" onClick={() => setPhase("playing")}>
-              DEFEND THE EGG
-            </button>
+            <div className="menu-buttons">
+              <button className="btn-big" onClick={() => setPhase("playing")}>
+                DEFEND THE EGG
+              </button>
+              <button className="btn-shop" onClick={() => setShopOpen(true)}>
+                🛒 MARKETPLACE
+              </button>
+            </div>
           </div>
         )}
 
-        {phase === "playing" && <GameCanvas onFertilized={onFertilized} />}
+        {phase === "playing" && (
+          <GameCanvas
+            onFertilized={onFertilized}
+            powerups={powerups}
+            paused={paused || shopOpen}
+          />
+        )}
         {(phase === "rolling" || phase === "result") && (
           <div className="game-stage stage-dim" />
+        )}
+
+        {/* Pause menu */}
+        {phase === "playing" && paused && !shopOpen && (
+          <div className="overlay">
+            <div className="pause-card">
+              <h2>⏸ PAUSED</h2>
+              <button className="btn-big" onClick={() => setPaused(false)}>
+                RESUME
+              </button>
+              <button className="btn-shop" onClick={() => setShopOpen(true)}>
+                🛒 MARKETPLACE
+              </button>
+              <button className="btn-ghost" onClick={goHome}>
+                🏠 HOME
+              </button>
+              <p className="pause-hint">Esc to resume</p>
+            </div>
+          </div>
         )}
 
         {phase === "rolling" && resultKey && (
@@ -184,6 +282,16 @@ function GameShell({ connected, playerId, name, setName, netWorth, totalKills, d
               setResultKey(null);
               setPhase("playing");
             }}
+            onHome={goHome}
+          />
+        )}
+
+        {shopOpen && (
+          <Marketplace
+            netWorth={netWorth}
+            owned={powerups}
+            onBuy={doBuy}
+            onClose={() => setShopOpen(false)}
           />
         )}
       </main>

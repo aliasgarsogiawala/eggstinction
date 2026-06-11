@@ -1,6 +1,6 @@
 import { outcomeByKey, fmtMoney } from "../game/outcomes";
 
-export default function ResultCard({ resultKey, kills, netWorth, onAgain }) {
+export default function ResultCard({ resultKey, kills, netWorth, onAgain, onHome }) {
   const o = outcomeByKey(resultKey);
   const gain = o.delta >= 0;
 
@@ -20,6 +20,11 @@ export default function ResultCard({ resultKey, kills, netWorth, onAgain }) {
         <button className="btn-big" onClick={onAgain}>
           DEFEND THE NEXT EGG 🥚
         </button>
+        {onHome && (
+          <button className="btn-ghost" onClick={onHome}>
+            🏠 HOME
+          </button>
+        )}
       </div>
     </div>
   );

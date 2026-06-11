@@ -60,7 +60,7 @@ function DestroyerBoard({ playerId }) {
   const top = useQuery(api.leaderboard.topDestroyers);
   return (
     <>
-      <h3>💀 SPERM DESTROYERS</h3>
+      <h3>💀 SWIMMER DESTROYERS</h3>
       <BoardList
         rows={top}
         playerId={playerId}

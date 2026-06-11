@@ -5,11 +5,13 @@
 const TAU = Math.PI * 2;
 
 export class EggDefense {
-  constructor(canvas, { onFertilized, onKill } = {}) {
+  constructor(canvas, { onFertilized, onKill, powerups = [] } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onFertilized = onFertilized;
     this.onKill = onKill;
+    this.powerups = new Set(powerups);
+    this.paused = false;
 
     this.mouse = { x: 0, y: 0, down: false };
     this.reset();
@@ -41,6 +43,12 @@ export class EggDefense {
     this.shake = 0;
     this.over = false;
     this.fertilizedAt = null;
+    this.shield = this.powerups.has("shield"); // one free hit per run
+    this.shieldFlash = 0;
+  }
+
+  setPaused(p) {
+    this.paused = p;
   }
 
   start() {
@@ -51,7 +59,7 @@ export class EggDefense {
       if (!this.running) return;
       const dt = Math.min((t - this.last) / 1000, 0.05);
       this.last = t;
-      this.update(dt);
+      if (!this.paused) this.update(dt);
       this.draw();
       this.raf = requestAnimationFrame(loop);
     };
@@ -100,18 +108,22 @@ export class EggDefense {
       this.spawnSperm();
     }
 
-    // Turret fire (hold mouse).
+    if (this.shieldFlash > 0) this.shieldFlash = Math.max(0, this.shieldFlash - dt);
+
+    // Turret fire (hold mouse). Rapid Fire shortens the cooldown.
     this.fireTimer -= dt;
     if (this.mouse.down && this.fireTimer <= 0) {
-      this.fireTimer = 0.09;
+      this.fireTimer = this.powerups.has("rapidfire") ? 0.05 : 0.09;
       this.fire();
     }
 
     const c = this.center;
-    // Sperm start sluggish and accelerate hard the longer the egg survives.
-    const speedMul = 1 + this.elapsed * 0.05;
+    // Swimmers start sluggish and accelerate hard the longer the egg survives.
+    // Slow Field knocks 30% off their speed all run long.
+    let speedMul = 1 + this.elapsed * 0.05;
+    if (this.powerups.has("slowfield")) speedMul *= 0.7;
 
-    // Sperm seek the egg with a wiggle.
+    // Swimmers seek the egg with a wiggle.
     for (const s of this.sperms) {
       const dx = c.x - s.x;
       const dy = c.y - s.y;
@@ -123,6 +135,11 @@ export class EggDefense {
       s.angle = Math.atan2(c.y - s.y, c.x - s.x);
 
       if (d < this.eggR + s.r) {
+        if (this.shield) {
+          // Egg Shield absorbs the hit and blasts the whole swarm away.
+          this.consumeShield();
+          break;
+        }
         this.fertilize();
         return;
       }
@@ -146,7 +163,8 @@ export class EggDefense {
       for (const s of this.sperms) {
         if (!s.dead && Math.hypot(b.x - s.x, b.y - s.y) < s.r + b.r) {
           s.dead = true;
-          b.life = 0;
+          // Piercing Rounds keep going; normal bullets die on impact.
+          if (!this.powerups.has("pierce")) b.life = 0;
           this.kills++;
           this.shake = Math.min(this.shake + 1.2, 4);
           this.burst(s.x, s.y, "#ff6b9d");
@@ -182,18 +200,34 @@ export class EggDefense {
   fire() {
     const c = this.center;
     const a = Math.atan2(this.mouse.y - c.y, this.mouse.x - c.x);
-    const spread = (Math.random() - 0.5) * 0.12;
     const speed = 620;
     const muzzle = this.eggR + 18;
-    this.bullets.push({
-      x: c.x + Math.cos(a + spread) * muzzle,
-      y: c.y + Math.sin(a + spread) * muzzle,
-      vx: Math.cos(a + spread) * speed,
-      vy: Math.sin(a + spread) * speed,
-      r: 6,
-      life: 1.2,
-    });
+    // Triple Shot fans three bullets; otherwise one with a touch of spray.
+    const angles = this.powerups.has("tripleshot")
+      ? [a - 0.18, a, a + 0.18]
+      : [a + (Math.random() - 0.5) * 0.12];
+    for (const ang of angles) {
+      this.bullets.push({
+        x: c.x + Math.cos(ang) * muzzle,
+        y: c.y + Math.sin(ang) * muzzle,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        r: 6,
+        life: 1.2,
+      });
+    }
     this.shake = Math.min(this.shake + 0.25, 2);
+  }
+
+  consumeShield() {
+    this.shield = false;
+    this.shieldFlash = 0.6;
+    this.shake = Math.min(this.shake + 6, 8);
+    const c = this.center;
+    this.burst(c.x, c.y, "#7ad7ff", 50);
+    // Blow every current swimmer off the board.
+    for (const s of this.sperms) this.burst(s.x, s.y, "#cdeafe", 5);
+    this.sperms = [];
   }
 
   fertilize() {
@@ -267,6 +301,7 @@ export class EggDefense {
 
     this.drawEgg(c);
     this.drawTurret(c);
+    if (this.shield || this.shieldFlash > 0) this.drawShield(c);
 
     for (const s of this.sperms) this.drawSperm(s);
 
@@ -416,6 +451,24 @@ export class EggDefense {
       ctx.arc(0, ry * 0.55, r * 0.16, Math.PI * 1.2, Math.PI * 1.8);
       ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  drawShield(c) {
+    const { ctx } = this;
+    const pulse = this.shieldFlash > 0 ? 1 + (0.6 - this.shieldFlash) * 1.2 : 1;
+    const r = (this.eggR + 16) * pulse;
+    const alpha = this.shieldFlash > 0 ? this.shieldFlash / 0.6 : 0.5;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, TAU);
+    ctx.strokeStyle = `rgba(122, 215, 255, ${alpha})`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, TAU);
+    ctx.fillStyle = `rgba(122, 215, 255, ${alpha * 0.12})`;
+    ctx.fill();
     ctx.restore();
   }
 

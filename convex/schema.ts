@@ -7,8 +7,10 @@ export default defineSchema({
     name: v.string(),
     netWorth: v.number(),
     babies: v.number(), // total gacha rolls (eggs fertilized)
-    totalKills: v.number(), // lifetime sperm destroyed — Sperm Destroyer score
-    bestKillStreak: v.number(), // most kills in a single run
+    // Optional so older player docs (created before these fields) keep validating.
+    totalKills: v.optional(v.number()), // lifetime swimmers destroyed — Destroyer score
+    bestKillStreak: v.optional(v.number()), // most kills in a single run
+    powerups: v.optional(v.array(v.string())), // owned marketplace upgrades
     lastOutcome: v.optional(v.string()),
   })
     .index("by_playerId", ["playerId"])
