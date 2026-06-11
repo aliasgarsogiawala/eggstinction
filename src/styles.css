@@ -1,0 +1,336 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #14092b;
+  --panel: #241543;
+  --pink: #ff6b9d;
+  --gold: #ffe66d;
+  --green: #6dffa3;
+  --red: #ff5c5c;
+  --ink: #fff7ee;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Nunito", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.layout {
+  display: flex;
+  height: 100vh;
+  gap: 14px;
+  padding: 14px;
+}
+
+/* ---------- play area ---------- */
+.play-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  position: relative;
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  font-family: "Luckiest Guy", cursive;
+  font-size: clamp(16px, 2.2vw, 28px);
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #00000055;
+  letter-spacing: 1px;
+}
+
+.networth {
+  font-weight: 900;
+  font-size: clamp(16px, 2vw, 24px);
+  background: var(--panel);
+  border: 3px solid var(--gold);
+  border-radius: 14px;
+  padding: 6px 16px;
+  color: var(--green);
+  white-space: nowrap;
+}
+.networth-broke { color: var(--red); border-color: var(--red); }
+
+.game-stage {
+  position: relative;
+  flex: 1;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 4px solid #3a2a63;
+  background: #1d1233;
+}
+.stage-dim { filter: brightness(0.5); }
+
+.game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.kill-counter {
+  position: absolute;
+  top: 12px; left: 14px;
+  font-weight: 900;
+  font-size: 22px;
+  text-shadow: 2px 2px 0 #000a;
+  pointer-events: none;
+}
+
+.hint {
+  position: absolute;
+  bottom: 10px; left: 50%;
+  transform: translateX(-50%);
+  opacity: 0.55;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.fertilized-banner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: "Luckiest Guy", cursive;
+  font-size: clamp(40px, 9vw, 110px);
+  color: var(--pink);
+  -webkit-text-stroke: 3px #fff;
+  text-shadow: 0 0 40px var(--pink);
+  animation: slam 0.5s cubic-bezier(0.2, 2.4, 0.4, 1) both;
+  pointer-events: none;
+}
+
+@keyframes slam {
+  from { transform: scale(6); opacity: 0; }
+  to { transform: scale(1) rotate(-4deg); opacity: 1; }
+}
+
+.shake-hard { animation: shake 0.4s linear 3; }
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-10px, 6px) rotate(-1deg); }
+  40% { transform: translate(9px, -7px) rotate(1deg); }
+  60% { transform: translate(-7px, -5px); }
+  80% { transform: translate(6px, 8px) rotate(1deg); }
+}
+
+/* ---------- menu ---------- */
+.menu {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  border-radius: 18px;
+  border: 4px solid #3a2a63;
+  background: radial-gradient(circle at 50% 40%, #3d2b56, #1d1233);
+}
+
+.menu-egg { font-size: 90px; animation: bob 1.6s ease-in-out infinite; }
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-12px) rotate(3deg); }
+}
+
+.menu-pitch { font-size: 17px; line-height: 1.6; opacity: 0.9; max-width: 480px; }
+
+.name-row { font-weight: 800; font-size: 16px; }
+.name-input {
+  font: inherit;
+  font-weight: 900;
+  color: var(--gold);
+  background: var(--panel);
+  border: 3px solid var(--pink);
+  border-radius: 10px;
+  padding: 6px 10px;
+  width: 200px;
+  text-align: center;
+  outline: none;
+}
+
+.btn-big {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: #2d1b00;
+  background: linear-gradient(180deg, var(--gold), #ffb84d);
+  border: none;
+  border-radius: 16px;
+  padding: 14px 34px;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #b97f1e;
+  transition: transform 0.08s;
+}
+.btn-big:hover { transform: scale(1.05) rotate(-1deg); }
+.btn-big:active { transform: translateY(4px); box-shadow: 0 2px 0 #b97f1e; }
+
+/* ---------- overlays ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0008;
+  backdrop-filter: blur(3px);
+  z-index: 10;
+}
+
+/* ---------- slot machine ---------- */
+.slot-machine {
+  background: linear-gradient(180deg, #4a2c7a, var(--panel));
+  border: 5px solid var(--gold);
+  border-radius: 22px;
+  padding: 26px 34px;
+  text-align: center;
+  box-shadow: 0 0 60px #000c;
+  animation: slam 0.4s both;
+}
+.slot-locked { animation: shake 0.25s linear 2; }
+
+.slot-title {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 20px;
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
+.slot-window {
+  background: #120a24;
+  border: 4px solid #000;
+  border-radius: 14px;
+  width: 320px;
+  height: 110px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.slot-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: drop 0.1s both;
+}
+@keyframes drop {
+  from { transform: translateY(-40px); opacity: 0.3; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.slot-emoji { font-size: 44px; }
+.slot-label { font-weight: 900; font-size: 18px; color: var(--ink); }
+
+.slot-lights { display: flex; justify-content: center; gap: 10px; margin-top: 14px; }
+.light {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #5a4585;
+}
+.light.on { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+
+/* ---------- result card ---------- */
+.result-card {
+  width: min(420px, 90%);
+  border-radius: 22px;
+  padding: 30px;
+  text-align: center;
+  background: linear-gradient(180deg, #4a2c7a, var(--panel));
+  animation: slam 0.45s both;
+  box-shadow: 0 0 60px #000c;
+}
+.card-gain { border: 5px solid var(--green); }
+.card-loss { border: 5px solid var(--red); }
+
+.result-emoji { font-size: 70px; }
+.result-title {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 32px;
+  color: var(--gold);
+  margin: 6px 0;
+}
+.result-flavor { opacity: 0.85; line-height: 1.5; margin-bottom: 14px; }
+
+.result-delta {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+.delta-gain { color: var(--green); text-shadow: 0 0 20px var(--green); }
+.delta-loss { color: var(--red); text-shadow: 0 0 20px var(--red); }
+
+.result-stats {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  font-weight: 800;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+/* ---------- leaderboard ---------- */
+.leaderboard {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 4px solid #3a2a63;
+  border-radius: 18px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.leaderboard h3 {
+  font-family: "Luckiest Guy", cursive;
+  color: var(--gold);
+  font-size: 17px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.lb-empty { text-align: center; opacity: 0.6; font-size: 14px; line-height: 1.7; }
+.lb-empty code { color: var(--gold); }
+
+.lb-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1c0f38;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  transition: transform 0.25s, background 0.25s;
+}
+.lb-row:hover { transform: scale(1.03); }
+.lb-me { outline: 2px solid var(--pink); }
+
+.lb-rank { width: 30px; font-weight: 900; }
+.lb-name {
+  flex: 1;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-last { margin-left: 4px; font-style: normal; }
+.lb-worth { font-weight: 900; color: var(--green); }
+.lb-broke .lb-worth { color: var(--red); }
+
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .leaderboard { width: 100%; max-height: 30vh; }
+}
