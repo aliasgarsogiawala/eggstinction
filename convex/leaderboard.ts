@@ -7,11 +7,29 @@ import { v } from "convex/values";
  * result the server returns.
  */
 const OUTCOMES = [
-  { key: "doctor", label: "The Doctor", weight: 10, delta: 500_000 },
-  { key: "engineer", label: "The Engineer", weight: 20, delta: 150_000 },
-  { key: "average", label: "The Average Joe", weight: 40, delta: 10_000 },
-  { key: "failure", label: "The Failure", weight: 20, delta: -50_000 },
-  { key: "footballer", label: "The Failed Footballer", weight: 10, delta: -250_000 },
+  // jackpots
+  { key: "moviestar", label: "The Movie Star", weight: 1, delta: 2_000_000 },
+  { key: "ceo", label: "The Tech CEO", weight: 3, delta: 1_000_000 },
+  { key: "astronaut", label: "The Astronaut", weight: 3, delta: 750_000 },
+  { key: "doctor", label: "The Doctor", weight: 8, delta: 500_000 },
+  { key: "cryptobro", label: "The Crypto Bro", weight: 5, delta: 420_000 },
+  { key: "lawyer", label: "The Lawyer", weight: 7, delta: 300_000 },
+  { key: "progamer", label: "The Pro Gamer", weight: 5, delta: 250_000 },
+  { key: "influencer", label: "The Influencer", weight: 6, delta: 200_000 },
+  // middle
+  { key: "engineer", label: "The Engineer", weight: 14, delta: 150_000 },
+  { key: "chef", label: "The Chef", weight: 7, delta: 80_000 },
+  { key: "cop", label: "The Cop", weight: 6, delta: 45_000 },
+  { key: "teacher", label: "The Teacher", weight: 8, delta: 30_000 },
+  { key: "average", label: "The Average Joe", weight: 16, delta: 10_000 },
+  // disappointments
+  { key: "couch", label: "The Couch Streamer", weight: 8, delta: -30_000 },
+  { key: "failure", label: "The Failure", weight: 12, delta: -50_000 },
+  { key: "musician", label: "The Struggling Musician", weight: 7, delta: -80_000 },
+  { key: "scammer", label: "The MLM 'Boss Babe'", weight: 5, delta: -150_000 },
+  { key: "footballer", label: "The Failed Footballer", weight: 6, delta: -250_000 },
+  { key: "gambler", label: "The Gambling Addict", weight: 4, delta: -400_000 },
+  { key: "rugpull", label: "The One Who Bought The Top", weight: 2, delta: -666_000 },
 ] as const;
 
 function rollOutcome() {

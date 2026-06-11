@@ -69,16 +69,34 @@ real time for every connected player.
 
 ## 🎰 Gacha outcomes (server-side, weighted)
 
-| Career | Chance | Net Worth |
-|---|---|---|
-| 🧑‍⚕️ The Doctor | 10% | +$500,000 |
-| 🧑‍💻 The Engineer | 20% | +$150,000 |
-| 🧍 The Average Joe | 40% | +$10,000 |
-| 🛋️ The Failure | 20% | −$50,000 |
-| ⚽ The Failed Footballer | 10% | −$250,000 |
+20 possible kids, from generational jackpots to generational regret:
 
-The roll happens **on the server** (`convex/leaderboard.ts → rollGacha`) so
-nobody can forge a $500k Doctor. The client only animates the result.
+| Career | Net Worth |
+|---|---|
+| 🎬 The Movie Star | +$2,000,000 |
+| 💼 The Tech CEO | +$1,000,000 |
+| 🚀 The Astronaut | +$750,000 |
+| 🧑‍⚕️ The Doctor | +$500,000 |
+| 🪙 The Crypto Bro | +$420,000 |
+| ⚖️ The Lawyer | +$300,000 |
+| 🎮 The Pro Gamer | +$250,000 |
+| 🤳 The Influencer | +$200,000 |
+| 🧑‍💻 The Engineer | +$150,000 |
+| 👨‍🍳 The Chef | +$80,000 |
+| 👮 The Cop | +$45,000 |
+| 🧑‍🏫 The Teacher | +$30,000 |
+| 🧍 The Average Joe | +$10,000 |
+| 🧟 The Couch Streamer | −$30,000 |
+| 🛋️ The Failure | −$50,000 |
+| 🎸 The Struggling Musician | −$80,000 |
+| 🧙 The MLM 'Boss Babe' | −$150,000 |
+| ⚽ The Failed Footballer | −$250,000 |
+| 🃏 The Gambling Addict | −$400,000 |
+| 💀 The One Who Bought The Top | −$666,000 |
+
+Rarer outcomes (the jackpots and the catastrophes) carry lower weights. The
+roll happens **on the server** (`convex/leaderboard.ts → rollGacha`) so nobody
+can forge a $2M Movie Star — the client only animates the result.
 
 ---
 

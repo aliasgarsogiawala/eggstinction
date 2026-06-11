@@ -378,9 +378,16 @@ body {
 .slot-emoji { font-size: 44px; }
 .slot-label { font-weight: 900; font-size: 18px; color: var(--ink); }
 
-.slot-lights { display: flex; justify-content: center; gap: 10px; margin-top: 14px; }
+.slot-lights {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 14px;
+  max-width: 320px;
+}
 .light {
-  width: 12px; height: 12px;
+  width: 10px; height: 10px;
   border-radius: 50%;
   background: #5a4585;
 }
