@@ -108,7 +108,8 @@ export class EggDefense {
     }
 
     const c = this.center;
-    const speedMul = 1 + this.elapsed * 0.018;
+    // Sperm start sluggish and accelerate hard the longer the egg survives.
+    const speedMul = 1 + this.elapsed * 0.05;
 
     // Sperm seek the egg with a wiggle.
     for (const s of this.sperms) {
@@ -169,7 +170,9 @@ export class EggDefense {
     this.sperms.push({
       ...pos,
       r: 11 + Math.random() * 5,
-      speed: 55 + Math.random() * 50,
+      // Slow crawlers at the start; combined with the time-based speedMul they
+      // ramp up to a frantic swarm.
+      speed: 26 + Math.random() * 22,
       phase: Math.random() * TAU,
       angle: 0,
       dead: false,
@@ -200,6 +203,10 @@ export class EggDefense {
     const c = this.center;
     this.burst(c.x, c.y, "#ffd166", 60);
     this.burst(c.x, c.y, "#ff6b9d", 40);
+    // Drop the swarm + bullets so the FERTILIZED drama doesn't keep
+    // simulating/drawing a huge late-game crowd every frame (was lagging).
+    this.sperms = [];
+    this.bullets = [];
   }
 
   burst(x, y, color, n = 14) {
@@ -293,40 +300,120 @@ export class EggDefense {
   drawEgg(c) {
     const { ctx } = this;
     const r = this.eggR;
-    const breathe = 1 + Math.sin(this.elapsed * 3) * 0.02;
+    const breathe = 1 + Math.sin(this.elapsed * 3) * 0.025;
+    const rx = r * 0.92;
+    const ry = r * 1.08;
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.scale(breathe, breathe);
-    // Glow.
+
+    // Soft outer glow.
+    const glow = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * 1.5);
+    glow.addColorStop(0, "rgba(255, 230, 109, 0.30)");
+    glow.addColorStop(1, "rgba(255, 230, 109, 0)");
     ctx.beginPath();
-    ctx.arc(0, 0, r * 1.25, 0, TAU);
-    ctx.fillStyle = "rgba(255, 230, 109, 0.12)";
+    ctx.arc(0, 0, r * 1.5, 0, TAU);
+    ctx.fillStyle = glow;
     ctx.fill();
-    // Body.
+
+    // Contact shadow under the egg.
     ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.92, r * 1.05, 0, 0, TAU);
-    ctx.fillStyle = "#fff4d6";
+    ctx.ellipse(0, ry * 0.95, rx * 0.8, r * 0.16, 0, 0, TAU);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.fill();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "#e8c97a";
+
+    // Shell body — shaded with a top-lit radial gradient.
+    const body = ctx.createRadialGradient(
+      -rx * 0.35, -ry * 0.45, r * 0.1,
+      0, 0, ry * 1.05
+    );
+    body.addColorStop(0, "#fffdf6");
+    body.addColorStop(0.55, "#fff1cf");
+    body.addColorStop(1, "#e8c074");
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, TAU);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = "#d8a94f";
     ctx.stroke();
-    // Worried face.
-    ctx.fillStyle = "#3d2b56";
-    const look = this.over ? 0 : Math.sin(this.elapsed * 2) * 3;
+
+    // Freckle speckles for a real-eggshell feel.
+    ctx.fillStyle = "rgba(200, 150, 70, 0.35)";
+    const speckles = [
+      [-0.35, 0.25, 0.05], [0.4, 0.05, 0.04], [-0.15, 0.55, 0.045],
+      [0.25, 0.5, 0.035], [-0.45, -0.1, 0.035], [0.1, -0.5, 0.04],
+    ];
+    for (const [sx, sy, sr] of speckles) {
+      ctx.beginPath();
+      ctx.arc(sx * rx, sy * ry, sr * r, 0, TAU);
+      ctx.fill();
+    }
+
+    // Glossy specular highlight, top-left.
     ctx.beginPath();
-    ctx.arc(-r * 0.3 + look, -r * 0.15, r * 0.09, 0, TAU);
-    ctx.arc(r * 0.3 + look, -r * 0.15, r * 0.09, 0, TAU);
+    ctx.ellipse(-rx * 0.34, -ry * 0.42, rx * 0.26, ry * 0.34, -0.5, 0, TAU);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fill();
+
+    // ---- face ----
+    const look = this.over ? 0 : Math.sin(this.elapsed * 2) * 2.5;
+    const eyeY = -ry * 0.08;
+    const eyeX = rx * 0.3;
+    const eyeR = r * 0.13;
+
+    // Worried eyebrows.
+    ctx.strokeStyle = "#3d2b56";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const browTilt = this.over ? 0.5 : 0.28;
+    ctx.beginPath();
+    ctx.moveTo(-eyeX - eyeR, eyeY - eyeR * 1.9);
+    ctx.lineTo(-eyeX + eyeR, eyeY - eyeR * (1.9 - browTilt));
+    ctx.moveTo(eyeX + eyeR, eyeY - eyeR * 1.9);
+    ctx.lineTo(eyeX - eyeR, eyeY - eyeR * (1.9 - browTilt));
+    ctx.stroke();
+
+    // Eye whites + pupils that track the cursor a touch.
+    for (const sign of [-1, 1]) {
+      const ex = sign * eyeX;
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.15, 0, 0, TAU);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#caa86a";
+      ctx.stroke();
+      // Pupil.
+      ctx.beginPath();
+      ctx.arc(ex + look, eyeY + eyeR * 0.18, eyeR * 0.5, 0, TAU);
+      ctx.fillStyle = "#2d2150";
+      ctx.fill();
+      // Catchlight.
+      ctx.beginPath();
+      ctx.arc(ex + look - eyeR * 0.18, eyeY - eyeR * 0.02, eyeR * 0.16, 0, TAU);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+    }
+
+    // Blush cheeks.
+    ctx.fillStyle = "rgba(255, 122, 158, 0.35)";
+    ctx.beginPath();
+    ctx.arc(-eyeX - eyeR * 0.4, eyeY + eyeR * 1.7, eyeR * 0.7, 0, TAU);
+    ctx.arc(eyeX + eyeR * 0.4, eyeY + eyeR * 1.7, eyeR * 0.7, 0, TAU);
+    ctx.fill();
+
+    // Mouth — small frown that becomes a shocked "O" on fertilization.
+    ctx.strokeStyle = "#3d2b56";
+    ctx.lineWidth = 3;
     ctx.beginPath();
     if (this.over) {
-      ctx.arc(0, r * 0.35, r * 0.22, 0, TAU); // shocked O mouth
-      ctx.strokeStyle = "#3d2b56";
-      ctx.lineWidth = 3;
+      ctx.arc(0, ry * 0.42, r * 0.16, 0, TAU);
+      ctx.fillStyle = "#6b3b5a";
+      ctx.fill();
       ctx.stroke();
     } else {
-      ctx.arc(0, r * 0.45, r * 0.18, Math.PI * 1.15, Math.PI * 1.85); // frown
-      ctx.strokeStyle = "#3d2b56";
-      ctx.lineWidth = 3;
+      ctx.arc(0, ry * 0.55, r * 0.16, Math.PI * 1.2, Math.PI * 1.8);
       ctx.stroke();
     }
     ctx.restore();

@@ -50,6 +50,8 @@ body {
   letter-spacing: 1px;
 }
 
+.hud-stats { display: flex; gap: 10px; align-items: center; }
+
 .networth {
   font-weight: 900;
   font-size: clamp(16px, 2vw, 24px);
@@ -61,6 +63,17 @@ body {
   white-space: nowrap;
 }
 .networth-broke { color: var(--red); border-color: var(--red); }
+
+.destroyer {
+  font-weight: 900;
+  font-size: clamp(16px, 2vw, 24px);
+  background: var(--panel);
+  border: 3px solid var(--pink);
+  border-radius: 14px;
+  padding: 6px 16px;
+  color: var(--pink);
+  white-space: nowrap;
+}
 
 .game-stage {
   position: relative;
@@ -298,6 +311,31 @@ body {
   font-size: 17px;
   text-align: center;
   margin-bottom: 12px;
+}
+
+.lb-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.lb-tab {
+  flex: 1;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--ink);
+  background: #1c0f38;
+  border: 2px solid #3a2a63;
+  border-radius: 10px;
+  padding: 7px 4px;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.2s, background 0.2s;
+}
+.lb-tab:hover { transform: translateY(-1px); }
+.lb-tab-on {
+  border-color: var(--gold);
+  background: #2d1b4d;
+  color: var(--gold);
 }
 
 .lb-empty { text-align: center; opacity: 0.6; font-size: 14px; line-height: 1.7; }

@@ -9,10 +9,10 @@ import { rollLocal, fmtMoney } from "./game/outcomes";
 
 // ---------- anonymous identity ----------
 function getPlayerId() {
-  let id = localStorage.getItem("mdbd_playerId");
+  let id = localStorage.getItem("sdg_playerId");
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem("mdbd_playerId", id);
+    localStorage.setItem("sdg_playerId", id);
   }
   return id;
 }
@@ -20,10 +20,10 @@ function getPlayerId() {
 const ADJ = ["Anxious", "Hopeful", "Broke", "Wealthy", "Frantic", "Chill", "Sweaty", "Lucky"];
 const NOUN = ["Parent", "Guardian", "Investor", "Defender", "Landlord", "Gambler"];
 function defaultName() {
-  let n = localStorage.getItem("mdbd_name");
+  let n = localStorage.getItem("sdg_name");
   if (!n) {
     n = `${ADJ[(Math.random() * ADJ.length) | 0]}${NOUN[(Math.random() * NOUN.length) | 0]}${(Math.random() * 99) | 0}`;
-    localStorage.setItem("mdbd_name", n);
+    localStorage.setItem("sdg_name", n);
   }
   return n;
 }
@@ -51,6 +51,7 @@ function OnlineApp() {
       name={name}
       setName={setName}
       netWorth={player?.netWorth ?? 0}
+      totalKills={player?.totalKills ?? 0}
       doRoll={doRoll}
     />
   );
@@ -61,14 +62,22 @@ function OfflineApp() {
   const [playerId] = useState(getPlayerId);
   const [name, setName] = useState(defaultName);
   const [netWorth, setNetWorth] = useState(() =>
-    Number(localStorage.getItem("mdbd_netWorth") || 0)
+    Number(localStorage.getItem("sdg_netWorth") || 0)
+  );
+  const [totalKills, setTotalKills] = useState(() =>
+    Number(localStorage.getItem("sdg_totalKills") || 0)
   );
 
-  const doRoll = useCallback(async () => {
+  const doRoll = useCallback(async (kills) => {
     const o = rollLocal();
     setNetWorth((w) => {
       const next = w + o.delta;
-      localStorage.setItem("mdbd_netWorth", String(next));
+      localStorage.setItem("sdg_netWorth", String(next));
+      return next;
+    });
+    setTotalKills((k) => {
+      const next = k + (kills || 0);
+      localStorage.setItem("sdg_totalKills", String(next));
       return next;
     });
     return { outcomeKey: o.key, delta: o.delta };
@@ -81,13 +90,14 @@ function OfflineApp() {
       name={name}
       setName={setName}
       netWorth={netWorth}
+      totalKills={totalKills}
       doRoll={doRoll}
     />
   );
 }
 
 // ---------- shared shell / phase machine ----------
-function GameShell({ connected, playerId, name, setName, netWorth, doRoll }) {
+function GameShell({ connected, playerId, name, setName, netWorth, totalKills, doRoll }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
   const [resultKey, setResultKey] = useState(null);
@@ -112,9 +122,14 @@ function GameShell({ connected, playerId, name, setName, netWorth, doRoll }) {
     <div className="layout">
       <main className="play-area">
         <header className="hud">
-          <h1 className="logo">🥚 MILLION DOLLAR BABY DEFENSE</h1>
-          <div className={`networth ${netWorth < 0 ? "networth-broke" : ""}`}>
-            💰 {fmtMoney(netWorth)}
+          <h1 className="logo">🥚 SAVEDATEGG</h1>
+          <div className="hud-stats">
+            <div className="destroyer" title="Lifetime sperm destroyed">
+              💥 {totalKills.toLocaleString("en-US")}
+            </div>
+            <div className={`networth ${netWorth < 0 ? "networth-broke" : ""}`}>
+              💰 {fmtMoney(netWorth)}
+            </div>
           </div>
         </header>
 
@@ -122,9 +137,14 @@ function GameShell({ connected, playerId, name, setName, netWorth, doRoll }) {
           <div className="menu">
             <div className="menu-egg">🥚</div>
             <p className="menu-pitch">
-              Swarms are coming for your egg. Hold to shoot.
+              <strong>How to play:</strong> a turret sits on your egg and aims
+              wherever you point. <strong>Hold the mouse to fire.</strong> Sperm
+              swim in from every edge — slow at first, then faster and faster.
+              Every one you pop adds to your <strong>💥 Sperm Destroyer</strong>{" "}
+              score.
               <br />
-              When (not if) it gets fertilized… you roll for the kid's career.
+              When (not if) the egg gets fertilized, you spin the gacha for the
+              kid's career and your <strong>💰 Net Worth</strong>.
               <br />
               <strong>Doctor? Engineer? …or a 34-year-old in your basement?</strong>
             </p>
@@ -136,7 +156,7 @@ function GameShell({ connected, playerId, name, setName, netWorth, doRoll }) {
                 maxLength={20}
                 onChange={(e) => {
                   setName(e.target.value);
-                  localStorage.setItem("mdbd_name", e.target.value);
+                  localStorage.setItem("sdg_name", e.target.value);
                 }}
               />
             </label>

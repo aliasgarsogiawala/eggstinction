@@ -43,6 +43,7 @@ export const rollGacha = mutation({
         name: args.name,
         netWorth: existing.netWorth + outcome.delta,
         babies: existing.babies + 1,
+        totalKills: existing.totalKills + args.killStreak,
         bestKillStreak: Math.max(existing.bestKillStreak, args.killStreak),
         lastOutcome: outcome.key,
       });
@@ -52,6 +53,7 @@ export const rollGacha = mutation({
         name: args.name,
         netWorth: outcome.delta,
         babies: 1,
+        totalKills: args.killStreak,
         bestKillStreak: args.killStreak,
         lastOutcome: outcome.key,
       });
@@ -79,6 +81,25 @@ export const topPlayers = query({
   },
 });
 
+/** Top 10 global Sperm Destroyers by lifetime kills — reactive. */
+export const topDestroyers = query({
+  args: {},
+  handler: async (ctx) => {
+    const top = await ctx.db
+      .query("players")
+      .withIndex("by_totalKills")
+      .order("desc")
+      .take(10);
+    return top.map((p) => ({
+      playerId: p.playerId,
+      name: p.name,
+      totalKills: p.totalKills,
+      bestKillStreak: p.bestKillStreak,
+      lastOutcome: p.lastOutcome,
+    }));
+  },
+});
+
 /** Fetch the current player's persistent record (net worth carries over). */
 export const getPlayer = query({
   args: { playerId: v.string() },
@@ -88,6 +109,12 @@ export const getPlayer = query({
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
       .unique();
     if (!p) return null;
-    return { name: p.name, netWorth: p.netWorth, babies: p.babies };
+    return {
+      name: p.name,
+      netWorth: p.netWorth,
+      babies: p.babies,
+      totalKills: p.totalKills,
+      bestKillStreak: p.bestKillStreak,
+    };
   },
 });
