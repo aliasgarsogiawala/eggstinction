@@ -15,13 +15,13 @@ export default function Leaderboard({ playerId, connected }) {
           className={`lb-tab ${tab === "worth" ? "lb-tab-on" : ""}`}
           onClick={() => setTab("worth")}
         >
-          💰 Net Worth
+          🧬 Genome
         </button>
         <button
           className={`lb-tab ${tab === "destroyer" ? "lb-tab-on" : ""}`}
           onClick={() => setTab("destroyer")}
         >
-          💥 Destroyer
+          🦴 Predators
         </button>
       </div>
 
@@ -44,12 +44,12 @@ function WorthBoard({ playerId }) {
   const top = useQuery(api.leaderboard.topPlayers);
   return (
     <>
-      <h3>🌍 GLOBAL RICH LIST</h3>
+      <h3>🦖 APEX GENOME</h3>
       <BoardList
         rows={top}
         playerId={playerId}
         emptyLabel="No data yet."
-        value={(p) => fmtMoney(p.netWorth)}
+        value={(p) => `${fmtMoney(p.netWorth)} 🧬`}
         negative={(p) => p.netWorth < 0}
       />
     </>
@@ -60,12 +60,12 @@ function DestroyerBoard({ playerId }) {
   const top = useQuery(api.leaderboard.topDestroyers);
   return (
     <>
-      <h3>💀 SWIMMER DESTROYERS</h3>
+      <h3>🦴 PEST EXTERMINATORS</h3>
       <BoardList
         rows={top}
         playerId={playerId}
         emptyLabel="No data yet."
-        value={(p) => `${p.totalKills.toLocaleString("en-US")} 💥`}
+        value={(p) => `${p.totalKills.toLocaleString("en-US")} 🦴`}
         negative={() => false}
       />
     </>

@@ -38,7 +38,7 @@ export default function GachaRoulette({ resultKey, onDone }) {
   return (
     <div className="overlay">
       <div className={`slot-machine ${done ? "slot-locked" : ""}`}>
-        <h2 className="slot-title">🎰 WHAT WILL THE BABY BECOME? 🎰</h2>
+        <h2 className="slot-title">🥚 WHAT HATCHES FROM THE EGG? 🥚</h2>
         <div className="slot-window">
           <div className="slot-cell" key={index}>
             <span className="slot-emoji">{o.emoji}</span>

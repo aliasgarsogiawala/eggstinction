@@ -6,7 +6,7 @@ import GachaRoulette from "./components/GachaRoulette";
 import ResultCard from "./components/ResultCard";
 import Leaderboard from "./components/Leaderboard";
 import Marketplace from "./components/Marketplace";
-import { rollLocal, fmtMoney } from "./game/outcomes";
+import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
 
 // ---------- anonymous identity ----------
@@ -41,6 +41,7 @@ function OnlineApp() {
   const player = useQuery(api.leaderboard.getPlayer, { playerId });
   const rollGacha = useMutation(api.leaderboard.rollGacha);
   const buyPowerup = useMutation(api.leaderboard.buyPowerup);
+  const consumePowerup = useMutation(api.leaderboard.consumePowerup);
 
   const doRoll = useCallback(
     (kills, seconds) =>
@@ -51,6 +52,10 @@ function OnlineApp() {
     (powerup) => buyPowerup({ playerId, name, powerup }),
     [buyPowerup, playerId, name]
   );
+  const doConsume = useCallback(
+    (powerup) => consumePowerup({ playerId, powerup }),
+    [consumePowerup, playerId]
+  );
 
   return (
     <GameShell
@@ -60,9 +65,10 @@ function OnlineApp() {
       setName={setName}
       netWorth={player?.netWorth ?? 0}
       totalKills={player?.totalKills ?? 0}
-      powerups={player?.powerups ?? []}
+      inventory={player?.inventory ?? {}}
       doRoll={doRoll}
       doBuy={doBuy}
+      doConsume={doConsume}
     />
   );
 }
@@ -77,18 +83,19 @@ function OfflineApp() {
   const [totalKills, setTotalKills] = useState(() =>
     Number(localStorage.getItem("sdg_totalKills") || 0)
   );
-  const [powerups, setPowerups] = useState(() => {
+  const [inventory, setInventory] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("sdg_powerups") || "[]");
+      return JSON.parse(localStorage.getItem("sdg_inventory") || "{}");
     } catch {
-      return [];
+      return {};
     }
   });
 
   const doRoll = useCallback(async (kills, seconds) => {
     const o = rollLocal(kills, seconds);
+    const earnings = (kills || 0) * KILL_REWARD;
     setNetWorth((w) => {
-      const next = w + o.delta;
+      const next = w + o.delta + earnings;
       localStorage.setItem("sdg_netWorth", String(next));
       return next;
     });
@@ -97,24 +104,36 @@ function OfflineApp() {
       localStorage.setItem("sdg_totalKills", String(next));
       return next;
     });
-    return { outcomeKey: o.key, delta: o.delta };
+    return { outcomeKey: o.key, delta: o.delta, killEarnings: earnings };
   }, []);
 
   const doBuy = useCallback(
     async (key) => {
       const p = powerupByKey(key);
       if (!p) return { ok: false, reason: "unknown" };
-      if (powerups.includes(key)) return { ok: false, reason: "owned" };
       if (netWorth < p.cost) return { ok: false, reason: "broke" };
       const nextWorth = netWorth - p.cost;
-      const nextPowerups = [...powerups, key];
+      const nextInv = { ...inventory, [key]: (inventory[key] ?? 0) + 1 };
       setNetWorth(nextWorth);
       localStorage.setItem("sdg_netWorth", String(nextWorth));
-      setPowerups(nextPowerups);
-      localStorage.setItem("sdg_powerups", JSON.stringify(nextPowerups));
+      setInventory(nextInv);
+      localStorage.setItem("sdg_inventory", JSON.stringify(nextInv));
       return { ok: true };
     },
-    [netWorth, powerups]
+    [netWorth, inventory]
+  );
+
+  const doConsume = useCallback(
+    async (key) => {
+      if (!inventory[key]) return { ok: false, reason: "empty" };
+      const nextInv = { ...inventory };
+      nextInv[key] -= 1;
+      if (nextInv[key] <= 0) delete nextInv[key];
+      setInventory(nextInv);
+      localStorage.setItem("sdg_inventory", JSON.stringify(nextInv));
+      return { ok: true };
+    },
+    [inventory]
   );
 
   return (
@@ -125,9 +144,10 @@ function OfflineApp() {
       setName={setName}
       netWorth={netWorth}
       totalKills={totalKills}
-      powerups={powerups}
+      inventory={inventory}
       doRoll={doRoll}
       doBuy={doBuy}
+      doConsume={doConsume}
     />
   );
 }
@@ -140,9 +160,10 @@ function GameShell({
   setName,
   netWorth,
   totalKills,
-  powerups,
+  inventory,
   doRoll,
   doBuy,
+  doConsume,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
@@ -193,13 +214,16 @@ function GameShell({
     <div className="layout">
       <main className="play-area">
         <header className="hud">
-          <h1 className="logo">🥚 SAVEDATEGG</h1>
+          <h1 className="logo">🦖 EGGSTINCTION</h1>
           <div className="hud-stats">
-            <div className="destroyer" title="Lifetime swimmers destroyed">
-              💥 {totalKills.toLocaleString("en-US")}
+            <div className="destroyer" title="Predators culled (lifetime)">
+              🦴 {totalKills.toLocaleString("en-US")}
             </div>
-            <div className={`networth ${netWorth < 0 ? "networth-broke" : ""}`}>
-              💰 {fmtMoney(netWorth)}
+            <div
+              className={`networth ${netWorth < 0 ? "networth-broke" : ""}`}
+              title="Genome Value"
+            >
+              🧬 {fmtMoney(netWorth)}
             </div>
           </div>
         </header>
@@ -208,18 +232,22 @@ function GameShell({
           <div className="menu">
             <div className="menu-egg">🥚</div>
             <p className="menu-pitch">
-              <strong>How to play:</strong> a turret sits on your egg and aims
-              wherever you point. <strong>Hold the mouse to fire.</strong>{" "}
-              Swimmers race in from every edge — slow at first, then faster and
-              faster. Every one you pop adds to your{" "}
-              <strong>💥 Swimmer Destroyer</strong> score.
+              <strong>How to play:</strong> a stone catapult sits on the last
+              dino egg and aims wherever you point.{" "}
+              <strong>Hold the mouse to hurl boulders.</strong> Predators charge
+              in from every edge — slow at first, then faster and faster. Every
+              one you crush adds to your <strong>🦴 Predators Culled</strong>{" "}
+              and pays <strong>🧬 DNA</strong>.
               <br />
-              When (not if) the egg gets fertilized, you spin the gacha for the
-              kid's career and your <strong>💰 Net Worth</strong>.{" "}
-              <strong>The longer you survive, the better the odds</strong> — a
-              1-second run rolls pure luck.
+              When (not if) the nest is breached, the egg hatches — spin the
+              gacha to see <strong>what your dino becomes</strong>.{" "}
+              <strong>The longer you survive, the better the odds.</strong>
               <br />
-              <strong>Doctor? Engineer? …or a 34-year-old in your basement?</strong>
+              <strong>T-Rex? Triceratops? …or just a sentient rock?</strong>
+              <br />
+              Spend DNA in the 🦴 Bone Market on charges, then unleash them
+              mid-run with keys <strong>1–5</strong>. Let a predator get close
+              and <strong>time slows down</strong> for the clutch save.
             </p>
             <label className="name-row">
               I am&nbsp;
@@ -235,10 +263,10 @@ function GameShell({
             </label>
             <div className="menu-buttons">
               <button className="btn-big" onClick={() => setPhase("playing")}>
-                DEFEND THE EGG
+                DEFEND THE NEST
               </button>
               <button className="btn-shop" onClick={() => setShopOpen(true)}>
-                🛒 MARKETPLACE
+                🦴 BONE MARKET
               </button>
             </div>
           </div>
@@ -247,7 +275,8 @@ function GameShell({
         {phase === "playing" && (
           <GameCanvas
             onFertilized={onFertilized}
-            powerups={powerups}
+            inventory={inventory}
+            onConsume={doConsume}
             paused={paused || shopOpen}
           />
         )}
@@ -264,7 +293,7 @@ function GameShell({
                 RESUME
               </button>
               <button className="btn-shop" onClick={() => setShopOpen(true)}>
-                🛒 MARKETPLACE
+                🦴 BONE MARKET
               </button>
               <button className="btn-ghost" onClick={goHome}>
                 🏠 HOME
@@ -295,7 +324,7 @@ function GameShell({
         {shopOpen && (
           <Marketplace
             netWorth={netWorth}
-            owned={powerups}
+            inventory={inventory}
             onBuy={doBuy}
             onClose={() => setShopOpen(false)}
           />

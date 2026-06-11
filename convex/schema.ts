@@ -10,7 +10,9 @@ export default defineSchema({
     // Optional so older player docs (created before these fields) keep validating.
     totalKills: v.optional(v.number()), // lifetime swimmers destroyed — Destroyer score
     bestKillStreak: v.optional(v.number()), // most kills in a single run
-    powerups: v.optional(v.array(v.string())), // owned marketplace upgrades
+    // Stackable consumable powerup charges, keyed by powerup → count.
+    inventory: v.optional(v.record(v.string(), v.number())),
+    powerups: v.optional(v.array(v.string())), // legacy field (pre-inventory docs)
     lastOutcome: v.optional(v.string()),
   })
     .index("by_playerId", ["playerId"])

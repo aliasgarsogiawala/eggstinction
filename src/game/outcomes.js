@@ -1,181 +1,186 @@
 // Client-side display data. Weights/deltas mirror the server table in
 // convex/leaderboard.ts — the authoritative roll happens server-side.
+// When the nest is breached the egg hatches into one of these — its Genome
+// Value (🧬) is added to (or torn from) your score.
 export const OUTCOMES = [
-  // ---- jackpots (rare, huge) ----
+  // ---- apex hatchlings (rare, huge) ----
   {
-    key: "moviestar",
-    label: "The Movie Star",
-    emoji: "🎬",
+    key: "trex",
+    label: "Tyrannosaurus Rex",
+    emoji: "🦖",
     delta: 2_000_000,
     weight: 1,
-    flavor: "A-list. You walk red carpets now. Paparazzi photograph YOU by accident.",
+    flavor: "The whole valley goes silent. The food chain has a new top, and it's yours.",
   },
   {
-    key: "ceo",
-    label: "The Tech CEO",
-    emoji: "💼",
+    key: "spino",
+    label: "Spinosaurus",
+    emoji: "🐊",
     delta: 1_000_000,
     weight: 3,
-    flavor: "Founder, hustler, LinkedIn legend. Owns three cars and all your respect.",
+    flavor: "Bigger than the Rex — and it swims. Genuinely, cosmically unfair.",
   },
   {
-    key: "astronaut",
-    label: "The Astronaut",
-    emoji: "🚀",
+    key: "quetz",
+    label: "Quetzalcoatlus",
+    emoji: "🦅",
     delta: 750_000,
     weight: 3,
-    flavor: "Went to space. Won't stop mentioning the overview effect. Honestly, fair.",
+    flavor: "Wingspan of a small plane. Owns the entire sky and pays no rent.",
   },
   {
-    key: "doctor",
-    label: "The Doctor",
-    emoji: "🧑‍⚕️",
+    key: "trike",
+    label: "Triceratops",
+    emoji: "🦕",
     delta: 500_000,
     weight: 8,
-    flavor: "Graduated top of their class. Calls every Sunday. Bought you a boat.",
+    flavor: "Three horns, zero fear. A walking fortress that calls every Sunday.",
   },
   {
-    key: "cryptobro",
-    label: "The Crypto Bro",
-    emoji: "🪙",
+    key: "raptor",
+    label: "Velociraptor",
+    emoji: "🦖",
     delta: 420_000,
     weight: 5,
-    flavor: "Bought low, sold high… this time. Will not shut up about 'fundamentals.'",
+    flavor: "Pack hunter, problem solver, can open doors. Be very afraid (and proud).",
   },
   {
-    key: "lawyer",
-    label: "The Lawyer",
-    emoji: "⚖️",
+    key: "anky",
+    label: "Ankylosaurus",
+    emoji: "🐢",
     delta: 300_000,
     weight: 7,
-    flavor: "Bills $900/hour to argue. Wins every family debate by default now.",
+    flavor: "A living tank with a club for a tail. Nothing gets through the armor.",
   },
   {
-    key: "progamer",
-    label: "The Pro Gamer",
-    emoji: "🎮",
+    key: "steg",
+    label: "Stegosaurus",
+    emoji: "🦎",
     delta: 250_000,
     weight: 5,
-    flavor: "Turned the basement habit into a six-figure salary. You were wrong. You admit it.",
+    flavor: "Spiked tail, walnut brain, enormous vibes. Survives purely on attitude.",
   },
   {
-    key: "influencer",
-    label: "The Influencer",
-    emoji: "🤳",
+    key: "allo",
+    label: "Allosaurus",
+    emoji: "🦖",
     delta: 200_000,
     weight: 6,
-    flavor: "12 million followers ask what's in their bag daily. It's sponsored gum.",
+    flavor: "The Jurassic mid-boss. Reliable, vicious, always gets the job done.",
   },
-  // ---- the comfortable middle ----
+  // ---- the steady herd ----
   {
-    key: "engineer",
-    label: "The Engineer",
-    emoji: "🧑‍💻",
+    key: "bary",
+    label: "Baryonyx",
+    emoji: "🐊",
     delta: 150_000,
     weight: 14,
-    flavor: "Works at a tech company you've never heard of. Fixed your printer once.",
+    flavor: "Fishes for a living. Modest, competent, no notes. Fixed your spear once.",
   },
   {
-    key: "chef",
-    label: "The Chef",
-    emoji: "👨‍🍳",
+    key: "gallim",
+    label: "Gallimimus",
+    emoji: "🐦",
     delta: 80_000,
     weight: 7,
-    flavor: "Owns a bistro with a three-week waitlist. Family dinners are elite now.",
+    flavor: "Fast, flighty, panics in a herd. Survives mostly by sprinting away.",
   },
   {
-    key: "cop",
-    label: "The Cop",
-    emoji: "👮",
+    key: "iguanodon",
+    label: "Iguanodon",
+    emoji: "🦕",
     delta: 45_000,
     weight: 6,
-    flavor: "Steady pension, stern eyebrows. Gets you out of every parking ticket.",
+    flavor: "Has a thumb spike and a steady temperament. The dependable everyman.",
   },
   {
-    key: "teacher",
-    label: "The Teacher",
-    emoji: "🧑‍🏫",
+    key: "parasaur",
+    label: "Parasaurolophus",
+    emoji: "🦕",
     delta: 30_000,
     weight: 8,
-    flavor: "Shapes young minds for a salary that does not reflect that. A hero, broke.",
+    flavor: "Honks beautifully. Mostly just wants to graze in peace and be left alone.",
   },
   {
-    key: "average",
-    label: "The Average Joe",
-    emoji: "🧍",
+    key: "compy",
+    label: "Compsognathus",
+    emoji: "🐔",
     delta: 10_000,
     weight: 16,
-    flavor: "Has a job, a sedan, and strong opinions about grilling. Could be worse.",
+    flavor: "Chicken-sized, scrappy, hunts in numbers. Could be worse, honestly.",
   },
-  // ---- the disappointments (negative) ----
+  // ---- evolutionary dead ends (negative) ----
   {
-    key: "couch",
-    label: "The Couch Streamer",
-    emoji: "🧟",
+    key: "dodo",
+    label: "The Dodo",
+    emoji: "🦤",
     delta: -30_000,
     weight: 8,
-    flavor: "Live 9 hours a day to a loyal audience of four. One of them is you.",
+    flavor: "A cousin from the future. Famously, catastrophically did not make it.",
   },
   {
-    key: "failure",
-    label: "The Failure",
-    emoji: "🛋️",
+    key: "dimetrodon",
+    label: "Dimetrodon",
+    emoji: "🦎",
     delta: -50_000,
     weight: 12,
-    flavor: "34 years old. Lives in your basement. 'The streaming career is about to pop off.'",
+    flavor: "Not even technically a dinosaur. Peaked in the Permian and never recovered.",
   },
   {
-    key: "musician",
-    label: "The Struggling Musician",
-    emoji: "🎸",
+    key: "trilobite",
+    label: "Trilobite",
+    emoji: "🐛",
     delta: -80_000,
     weight: 7,
-    flavor: "'The album drops next month.' It has dropped next month for nine years.",
+    flavor: "Survived 270 million years, then didn't. Tragically hard to root for.",
   },
   {
-    key: "scammer",
-    label: "The MLM 'Boss Babe'",
-    emoji: "🧙",
+    key: "ammonite",
+    label: "Ammonite",
+    emoji: "🐚",
     delta: -150_000,
     weight: 5,
-    flavor: "Slid into your DMs about an 'opportunity.' We do not bring it up at Thanksgiving.",
+    flavor: "A snail with ambitions. The ambitions, regrettably, did not pan out.",
   },
   {
-    key: "footballer",
-    label: "The Failed Footballer",
-    emoji: "⚽",
+    key: "roach",
+    label: "Just a Cockroach",
+    emoji: "🪳",
     delta: -250_000,
     weight: 6,
-    flavor: "12 years of elite camps. Benched in the Sunday league. The knee's gone too.",
+    flavor: "Will outlive literally everything and contribute literally nothing.",
   },
   {
-    key: "gambler",
-    label: "The Gambling Addict",
-    emoji: "🃏",
+    key: "mosquito",
+    label: "The Amber Mosquito",
+    emoji: "🦟",
     delta: -400_000,
     weight: 4,
-    flavor: "Had a system. The system had a flaw. The flaw was the entire system.",
+    flavor: "Trapped in tree sap for eternity. At least it'll be famous one day?",
   },
   {
-    key: "rugpull",
-    label: "The One Who Bought The Top",
-    emoji: "💀",
+    key: "rock",
+    label: "A Sentient Rock",
+    emoji: "🪨",
     delta: -666_000,
     weight: 2,
-    flavor: "Put the inheritance into $MOONCOIN at the literal peak. It is zero now.",
+    flavor: "The mutation went catastrophically sideways. It is, now, just a rock.",
   },
 ];
 
 export const outcomeByKey = (key) => OUTCOMES.find((o) => o.key === key);
 
 // ---- performance-weighted rolling ----
-// Surviving longer (and racking up kills) tilts the gacha toward better
-// careers. A 1-second run rolls the base table; a long, high-kill run
-// meaningfully boosts the jackpots and suppresses the catastrophes.
+// Surviving longer (and culling more predators) tilts the hatch toward apex
+// species. A 1-second run rolls the base table; a long, high-kill run
+// meaningfully boosts the legends and suppresses the dead ends.
 // MUST stay in sync with convex/leaderboard.ts.
 const TILT = 2.2; // how hard performance bends the odds
 const MAX_POS = 2_000_000; // best outcome delta (normalizer)
 const MAX_NEG = 666_000; // worst outcome |delta| (normalizer)
+
+// DNA earned per predator destroyed (mirror convex/leaderboard.ts).
+export const KILL_REWARD = 2_000;
 
 // 0 → no edge (rolled base table), 1 → maxed out. ~60s or ~100 kills tops it.
 export function survivalLuck(kills = 0, seconds = 0) {
@@ -203,5 +208,6 @@ export function rollLocal(kills = 0, seconds = 0) {
   return OUTCOMES[OUTCOMES.length - 1];
 }
 
+// Genome Value is a plain (sometimes negative) number — no currency symbol.
 export const fmtMoney = (n) =>
-  `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
+  `${n < 0 ? "-" : ""}${Math.abs(n).toLocaleString("en-US")}`;

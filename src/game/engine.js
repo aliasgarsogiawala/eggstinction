@@ -1,16 +1,15 @@
-// EggDefense — canvas tower-defense engine.
-// Egg in the center, a turret on the egg aims at the cursor, hold to fire.
-// Sperm swarm in from the screen edges; one touch on the egg = FERTILIZED.
+// EggDefense — canvas tower-defense engine (EGGSTINCTION).
+// A dino egg sits in a nest; a catapult on it aims at the cursor, hold to hurl.
+// Predators swarm in from the screen edges; one touch on the egg = HATCHING.
 
 const TAU = Math.PI * 2;
 
 export class EggDefense {
-  constructor(canvas, { onFertilized, onKill, powerups = [] } = {}) {
+  constructor(canvas, { onFertilized, onKill } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onFertilized = onFertilized;
     this.onKill = onKill;
-    this.powerups = new Set(powerups);
     this.paused = false;
 
     this.mouse = { x: 0, y: 0, down: false };
@@ -43,12 +42,30 @@ export class EggDefense {
     this.shake = 0;
     this.over = false;
     this.fertilizedAt = null;
-    this.shield = this.powerups.has("shield"); // one free hit per run
+    this.shield = false; // gained by activating an Egg Shield charge
     this.shieldFlash = 0;
+    // Active timed buffs (seconds remaining), set by activate().
+    this.buffs = { rapidfire: 0, tripleshot: 0, slowfield: 0, pierce: 0 };
+    this.timeScale = 1; // slow-mo factor applied to swimmer movement
   }
 
   setPaused(p) {
     this.paused = p;
+  }
+
+  // Consume a powerup charge mid-run. Buffs are timed; shield is a one-hit guard.
+  activate(key) {
+    if (this.over) return;
+    const DURATIONS = { rapidfire: 8, tripleshot: 8, slowfield: 6, pierce: 8 };
+    if (key === "shield") {
+      this.shield = true;
+      this.shieldFlash = 0.6;
+      return;
+    }
+    if (key in this.buffs) {
+      // Re-activating refreshes (doesn't stack) the duration.
+      this.buffs[key] = DURATIONS[key];
+    }
   }
 
   start() {
@@ -109,29 +126,48 @@ export class EggDefense {
     }
 
     if (this.shieldFlash > 0) this.shieldFlash = Math.max(0, this.shieldFlash - dt);
+    // Tick down active buff timers.
+    for (const k in this.buffs) {
+      if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
+    }
 
     // Turret fire (hold mouse). Rapid Fire shortens the cooldown.
     this.fireTimer -= dt;
     if (this.mouse.down && this.fireTimer <= 0) {
-      this.fireTimer = this.powerups.has("rapidfire") ? 0.05 : 0.09;
+      this.fireTimer = this.buffs.rapidfire > 0 ? 0.05 : 0.09;
       this.fire();
     }
 
     const c = this.center;
     // Swimmers start sluggish and accelerate hard the longer the egg survives.
-    // Slow Field knocks 30% off their speed all run long.
+    // Slow Field knocks them to 40% speed for its duration.
     let speedMul = 1 + this.elapsed * 0.05;
-    if (this.powerups.has("slowfield")) speedMul *= 0.7;
+    if (this.buffs.slowfield > 0) speedMul *= 0.4;
 
-    // Swimmers seek the egg with a wiggle.
+    // Slow-mo on near-miss: when the closest swimmer is about to touch the egg,
+    // time dilates so you can pull off the clutch save.
+    let nearest = Infinity;
+    for (const s of this.sperms) {
+      const edge = Math.hypot(c.x - s.x, c.y - s.y) - this.eggR - s.r;
+      if (edge < nearest) nearest = edge;
+    }
+    const SLOWMO_RANGE = 70;
+    const target =
+      nearest < SLOWMO_RANGE ? 0.3 + 0.7 * (Math.max(0, nearest) / SLOWMO_RANGE) : 1;
+    // Snap into slow-mo quickly, ease back out smoothly.
+    const ease = target < this.timeScale ? 0.3 : 0.08;
+    this.timeScale += (target - this.timeScale) * ease;
+    const ts = this.timeScale;
+
+    // Swimmers seek the egg with a wiggle (slowed by slow-mo).
     for (const s of this.sperms) {
       const dx = c.x - s.x;
       const dy = c.y - s.y;
       const d = Math.hypot(dx, dy) || 1;
-      s.phase += dt * 14;
+      s.phase += dt * 14 * ts;
       const wob = Math.sin(s.phase) * 60;
-      s.x += ((dx / d) * s.speed * speedMul + (-dy / d) * wob * 0.4) * dt;
-      s.y += ((dy / d) * s.speed * speedMul + (dx / d) * wob * 0.4) * dt;
+      s.x += ((dx / d) * s.speed * speedMul + (-dy / d) * wob * 0.4) * dt * ts;
+      s.y += ((dy / d) * s.speed * speedMul + (dx / d) * wob * 0.4) * dt * ts;
       s.angle = Math.atan2(c.y - s.y, c.x - s.x);
 
       if (d < this.eggR + s.r) {
@@ -164,10 +200,10 @@ export class EggDefense {
         if (!s.dead && Math.hypot(b.x - s.x, b.y - s.y) < s.r + b.r) {
           s.dead = true;
           // Piercing Rounds keep going; normal bullets die on impact.
-          if (!this.powerups.has("pierce")) b.life = 0;
+          if (this.buffs.pierce <= 0) b.life = 0;
           this.kills++;
           this.shake = Math.min(this.shake + 1.2, 4);
-          this.burst(s.x, s.y, "#ff6b9d");
+          this.burst(s.x, s.y, "#9ad14f");
           this.onKill?.(this.kills);
         }
       }
@@ -203,7 +239,7 @@ export class EggDefense {
     const speed = 620;
     const muzzle = this.eggR + 18;
     // Triple Shot fans three bullets; otherwise one with a touch of spray.
-    const angles = this.powerups.has("tripleshot")
+    const angles = this.buffs.tripleshot > 0
       ? [a - 0.18, a, a + 0.18]
       : [a + (Math.random() - 0.5) * 0.12];
     for (const ang of angles) {
@@ -224,20 +260,21 @@ export class EggDefense {
     this.shieldFlash = 0.6;
     this.shake = Math.min(this.shake + 6, 8);
     const c = this.center;
-    this.burst(c.x, c.y, "#7ad7ff", 50);
-    // Blow every current swimmer off the board.
-    for (const s of this.sperms) this.burst(s.x, s.y, "#cdeafe", 5);
+    this.burst(c.x, c.y, "#ffc861", 50);
+    // Blow every current predator off the board.
+    for (const s of this.sperms) this.burst(s.x, s.y, "#ffe6a8", 5);
     this.sperms = [];
   }
 
   fertilize() {
     this.over = true;
     this.fertilizedAt = performance.now();
+    this.timeScale = 1;
     this.shake = 18;
     const c = this.center;
-    this.burst(c.x, c.y, "#ffd166", 60);
-    this.burst(c.x, c.y, "#ff6b9d", 40);
-    // Drop the swarm + bullets so the FERTILIZED drama doesn't keep
+    this.burst(c.x, c.y, "#ffae57", 60);
+    this.burst(c.x, c.y, "#c0563b", 40);
+    // Drop the swarm + bullets so the HATCHING drama doesn't keep
     // simulating/drawing a huge late-game crowd every frame (was lagging).
     this.sperms = [];
     this.bullets = [];
@@ -283,17 +320,38 @@ export class EggDefense {
       );
     }
 
-    // Background.
+    // Background — warm volcanic jungle floor.
     const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, canvas.width * 0.7);
-    g.addColorStop(0, "#3d2b56");
-    g.addColorStop(1, "#1d1233");
+    g.addColorStop(0, "#33402a");
+    g.addColorStop(1, "#0e140c");
     ctx.fillStyle = g;
     ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
 
-    // Danger ring.
+    // Slow-mo vignette — cool blue edges + a label when time dilates.
+    if (this.timeScale < 0.92 && !this.over) {
+      const amt = (0.92 - this.timeScale) / 0.62; // 0..1
+      const vg = ctx.createRadialGradient(
+        c.x, c.y, canvas.height * 0.25,
+        c.x, c.y, canvas.width * 0.75
+      );
+      vg.addColorStop(0, "rgba(90, 180, 255, 0)");
+      vg.addColorStop(1, `rgba(90, 180, 255, ${0.35 * amt})`);
+      ctx.fillStyle = vg;
+      ctx.fillRect(-30, -30, canvas.width + 60, canvas.height + 60);
+
+      ctx.save();
+      ctx.globalAlpha = amt;
+      ctx.fillStyle = "#bfe3ff";
+      ctx.font = "900 18px Nunito, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("◇ PRIMAL INSTINCT ◇", c.x, 34);
+      ctx.restore();
+    }
+
+    // Nest boundary ring.
     ctx.beginPath();
     ctx.arc(c.x, c.y, this.eggR + 26, 0, TAU);
-    ctx.strokeStyle = "rgba(255,107,157,0.25)";
+    ctx.strokeStyle = "rgba(150,100,55,0.30)";
     ctx.setLineDash([10, 12]);
     ctx.lineWidth = 3;
     ctx.stroke();
@@ -306,13 +364,14 @@ export class EggDefense {
     for (const s of this.sperms) this.drawSperm(s);
 
     for (const b of this.bullets) {
+      // Hurled boulders.
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r, 0, TAU);
-      ctx.fillStyle = "#ffe66d";
+      ctx.fillStyle = "#b9a47e";
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 0.45, 0, TAU);
-      ctx.fillStyle = "#fff";
+      ctx.arc(b.x - b.r * 0.25, b.y - b.r * 0.25, b.r * 0.45, 0, TAU);
+      ctx.fillStyle = "#e9ddc4";
       ctx.fill();
     }
 
@@ -354,27 +413,43 @@ export class EggDefense {
     // Contact shadow under the egg.
     ctx.beginPath();
     ctx.ellipse(0, ry * 0.95, rx * 0.8, r * 0.16, 0, 0, TAU);
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillStyle = "rgba(0,0,0,0.30)";
     ctx.fill();
 
-    // Shell body — shaded with a top-lit radial gradient.
+    // Twiggy nest cradling the egg's lower half.
+    ctx.save();
+    ctx.lineCap = "round";
+    for (let i = 0; i < 16; i++) {
+      const ang = Math.PI * (0.08 + (i / 15) * 0.84);
+      const nx = Math.cos(ang) * rx * 1.06;
+      const ny = Math.sin(ang) * ry * 0.99;
+      ctx.strokeStyle = i % 2 ? "#7a5430" : "#5e3f22";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(nx - 10, ny + 2);
+      ctx.lineTo(nx + 10, ny - 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Shell body — mossy dino egg, top-lit radial gradient.
     const body = ctx.createRadialGradient(
       -rx * 0.35, -ry * 0.45, r * 0.1,
       0, 0, ry * 1.05
     );
-    body.addColorStop(0, "#fffdf6");
-    body.addColorStop(0.55, "#fff1cf");
-    body.addColorStop(1, "#e8c074");
+    body.addColorStop(0, "#eef8d8");
+    body.addColorStop(0.55, "#c2dd8c");
+    body.addColorStop(1, "#79a84d");
     ctx.beginPath();
     ctx.ellipse(0, 0, rx, ry, 0, 0, TAU);
     ctx.fillStyle = body;
     ctx.fill();
     ctx.lineWidth = 3.5;
-    ctx.strokeStyle = "#d8a94f";
+    ctx.strokeStyle = "#5d8838";
     ctx.stroke();
 
-    // Freckle speckles for a real-eggshell feel.
-    ctx.fillStyle = "rgba(200, 150, 70, 0.35)";
+    // Mottled speckles for a real-eggshell feel.
+    ctx.fillStyle = "rgba(60, 92, 34, 0.40)";
     const speckles = [
       [-0.35, 0.25, 0.05], [0.4, 0.05, 0.04], [-0.15, 0.55, 0.045],
       [0.25, 0.5, 0.035], [-0.45, -0.1, 0.035], [0.1, -0.5, 0.04],
@@ -398,7 +473,7 @@ export class EggDefense {
     const eyeR = r * 0.13;
 
     // Worried eyebrows.
-    ctx.strokeStyle = "#3d2b56";
+    ctx.strokeStyle = "#2c3a1f";
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     const browTilt = this.over ? 0.5 : 0.28;
@@ -417,12 +492,12 @@ export class EggDefense {
       ctx.fillStyle = "#fff";
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#caa86a";
+      ctx.strokeStyle = "#8fae66";
       ctx.stroke();
       // Pupil.
       ctx.beginPath();
       ctx.arc(ex + look, eyeY + eyeR * 0.18, eyeR * 0.5, 0, TAU);
-      ctx.fillStyle = "#2d2150";
+      ctx.fillStyle = "#23301a";
       ctx.fill();
       // Catchlight.
       ctx.beginPath();
@@ -432,19 +507,19 @@ export class EggDefense {
     }
 
     // Blush cheeks.
-    ctx.fillStyle = "rgba(255, 122, 158, 0.35)";
+    ctx.fillStyle = "rgba(255, 150, 90, 0.30)";
     ctx.beginPath();
     ctx.arc(-eyeX - eyeR * 0.4, eyeY + eyeR * 1.7, eyeR * 0.7, 0, TAU);
     ctx.arc(eyeX + eyeR * 0.4, eyeY + eyeR * 1.7, eyeR * 0.7, 0, TAU);
     ctx.fill();
 
     // Mouth — small frown that becomes a shocked "O" on fertilization.
-    ctx.strokeStyle = "#3d2b56";
+    ctx.strokeStyle = "#2c3a1f";
     ctx.lineWidth = 3;
     ctx.beginPath();
     if (this.over) {
       ctx.arc(0, ry * 0.42, r * 0.16, 0, TAU);
-      ctx.fillStyle = "#6b3b5a";
+      ctx.fillStyle = "#5a3b2a";
       ctx.fill();
       ctx.stroke();
     } else {
@@ -462,12 +537,12 @@ export class EggDefense {
     ctx.save();
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, TAU);
-    ctx.strokeStyle = `rgba(122, 215, 255, ${alpha})`;
+    ctx.strokeStyle = `rgba(255, 190, 90, ${alpha})`;
     ctx.lineWidth = 4;
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, TAU);
-    ctx.fillStyle = `rgba(122, 215, 255, ${alpha * 0.12})`;
+    ctx.fillStyle = `rgba(255, 190, 90, ${alpha * 0.14})`;
     ctx.fill();
     ctx.restore();
   }
@@ -478,56 +553,104 @@ export class EggDefense {
     ctx.save();
     ctx.translate(c.x, c.y);
     ctx.rotate(a);
-    // Barrel.
-    ctx.fillStyle = "#5e60ce";
-    ctx.strokeStyle = "#2d2a55";
+    // Catapult arm (carved bone / stone).
+    ctx.fillStyle = "#9a8c74";
+    ctx.strokeStyle = "#3a3128";
     ctx.lineWidth = 3;
     const len = this.eggR + 22;
     ctx.beginPath();
     ctx.roundRect(this.eggR * 0.4, -8, len - this.eggR * 0.4, 16, 8);
     ctx.fill();
     ctx.stroke();
-    // Muzzle tip.
+    // Boulder loaded at the tip.
     ctx.beginPath();
-    ctx.arc(len, 0, 7, 0, TAU);
-    ctx.fillStyle = "#ffe66d";
+    ctx.arc(len, 0, 8, 0, TAU);
+    ctx.fillStyle = "#b9a47e";
     ctx.fill();
+    ctx.strokeStyle = "#6b5d45";
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.restore();
   }
 
+  // A small predatory raptor, drawn facing its heading (+x = toward the nest).
   drawSperm(s) {
     const { ctx } = this;
+    const r = s.r;
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.angle);
-    // Tail (wiggly).
+
+    const body = "#b5613a";
+    const dark = "#7a3d24";
+
+    // Wiggly tail trailing behind.
     ctx.beginPath();
-    ctx.moveTo(-s.r * 0.6, 0);
+    ctx.moveTo(-r * 0.5, 0);
     for (let i = 1; i <= 4; i++) {
       const t = i / 4;
-      ctx.lineTo(
-        -s.r * 0.6 - t * s.r * 2.4,
-        Math.sin(s.phase + i * 1.6) * s.r * 0.55
-      );
+      ctx.lineTo(-r * 0.5 - t * r * 1.8, Math.sin(s.phase + i * 1.4) * r * 0.45 * t);
     }
-    ctx.strokeStyle = "#cdeafe";
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = r * 0.32;
     ctx.lineCap = "round";
     ctx.stroke();
-    // Head.
+
+    // Scrambling legs.
+    const legSwing = Math.sin(s.phase * 1.6) * r * 0.4;
+    ctx.lineWidth = r * 0.18;
     ctx.beginPath();
-    ctx.ellipse(0, 0, s.r, s.r * 0.75, 0, 0, TAU);
-    ctx.fillStyle = "#eaf6ff";
-    ctx.fill();
-    ctx.strokeStyle = "#9bc8ec";
-    ctx.lineWidth = 2;
+    ctx.moveTo(-r * 0.1, r * 0.4);
+    ctx.lineTo(-r * 0.1 + legSwing, r * 0.95);
+    ctx.moveTo(r * 0.25, r * 0.4);
+    ctx.lineTo(r * 0.25 - legSwing, r * 0.95);
     ctx.stroke();
-    // Determined little eyes.
-    ctx.fillStyle = "#2d2a55";
+
+    // Spiny back ridge.
+    ctx.fillStyle = dark;
     ctx.beginPath();
-    ctx.arc(s.r * 0.35, -s.r * 0.18, 1.8, 0, TAU);
-    ctx.arc(s.r * 0.35, s.r * 0.18, 1.8, 0, TAU);
+    for (let i = -1; i <= 1; i++) {
+      const bx = i * r * 0.42;
+      ctx.moveTo(bx - r * 0.12, -r * 0.4);
+      ctx.lineTo(bx, -r * 0.82);
+      ctx.lineTo(bx + r * 0.12, -r * 0.4);
+    }
     ctx.fill();
+
+    // Body.
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 0.62, 0, 0, TAU);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // Head + snapping jaw up front.
+    ctx.beginPath();
+    ctx.ellipse(r * 0.95, -r * 0.05, r * 0.55, r * 0.42, 0, 0, TAU);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.stroke();
+    const gape = (Math.sin(s.phase * 2) * 0.5 + 0.5) * r * 0.32;
+    ctx.fillStyle = "#3a1c12";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.15, -r * 0.12);
+    ctx.lineTo(r * 1.75, r * 0.05 + gape);
+    ctx.lineTo(r * 1.15, r * 0.22 + gape * 0.3);
+    ctx.closePath();
+    ctx.fill();
+
+    // Menacing slit eye.
+    ctx.fillStyle = "#ffd54a";
+    ctx.beginPath();
+    ctx.arc(r * 0.95, -r * 0.18, r * 0.17, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#1c0e08";
+    ctx.beginPath();
+    ctx.arc(r * 1.0, -r * 0.18, r * 0.07, 0, TAU);
+    ctx.fill();
+
     ctx.restore();
   }
 }
