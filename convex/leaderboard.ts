@@ -32,12 +32,30 @@ const OUTCOMES = [
   { key: "rugpull", label: "The One Who Bought The Top", weight: 2, delta: -666_000 },
 ] as const;
 
-function rollOutcome() {
-  const total = OUTCOMES.reduce((s, o) => s + o.weight, 0);
+// Surviving longer (and killing more) bends the odds toward better careers.
+// A 1-second run rolls the base table; a long, high-kill run boosts the
+// jackpots and suppresses the catastrophes. Mirrors src/game/outcomes.js.
+const TILT = 2.2;
+const MAX_POS = 2_000_000;
+const MAX_NEG = 666_000;
+
+function survivalLuck(kills: number, seconds: number) {
+  const timePart = Math.min(seconds / 60, 1);
+  const killPart = Math.min(kills / 100, 1);
+  return Math.min(0.65 * timePart + 0.35 * killPart, 1);
+}
+
+function rollOutcome(kills: number, seconds: number) {
+  const luck = survivalLuck(kills, seconds);
+  const weights = OUTCOMES.map((o) => {
+    const goodness = o.delta >= 0 ? o.delta / MAX_POS : o.delta / MAX_NEG;
+    return o.weight * Math.exp(TILT * luck * goodness);
+  });
+  const total = weights.reduce((s, w) => s + w, 0);
   let r = Math.random() * total;
-  for (const o of OUTCOMES) {
-    r -= o.weight;
-    if (r <= 0) return o;
+  for (let i = 0; i < OUTCOMES.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return OUTCOMES[i];
   }
   return OUTCOMES[OUTCOMES.length - 1];
 }
@@ -48,9 +66,10 @@ export const rollGacha = mutation({
     playerId: v.string(),
     name: v.string(),
     killStreak: v.number(),
+    survivedSeconds: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const outcome = rollOutcome();
+    const outcome = rollOutcome(args.killStreak, args.survivedSeconds ?? 0);
     const existing = await ctx.db
       .query("players")
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))

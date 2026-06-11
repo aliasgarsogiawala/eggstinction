@@ -168,13 +168,37 @@ export const OUTCOMES = [
 
 export const outcomeByKey = (key) => OUTCOMES.find((o) => o.key === key);
 
+// ---- performance-weighted rolling ----
+// Surviving longer (and racking up kills) tilts the gacha toward better
+// careers. A 1-second run rolls the base table; a long, high-kill run
+// meaningfully boosts the jackpots and suppresses the catastrophes.
+// MUST stay in sync with convex/leaderboard.ts.
+const TILT = 2.2; // how hard performance bends the odds
+const MAX_POS = 2_000_000; // best outcome delta (normalizer)
+const MAX_NEG = 666_000; // worst outcome |delta| (normalizer)
+
+// 0 → no edge (rolled base table), 1 → maxed out. ~60s or ~100 kills tops it.
+export function survivalLuck(kills = 0, seconds = 0) {
+  const timePart = Math.min(seconds / 60, 1);
+  const killPart = Math.min(kills / 100, 1);
+  return Math.min(0.65 * timePart + 0.35 * killPart, 1);
+}
+
+function effectiveWeights(luck) {
+  return OUTCOMES.map((o) => {
+    const goodness = o.delta >= 0 ? o.delta / MAX_POS : o.delta / MAX_NEG;
+    return o.weight * Math.exp(TILT * luck * goodness);
+  });
+}
+
 // Local fallback roll, used only when Convex isn't connected yet.
-export function rollLocal() {
-  const total = OUTCOMES.reduce((s, o) => s + o.weight, 0);
+export function rollLocal(kills = 0, seconds = 0) {
+  const weights = effectiveWeights(survivalLuck(kills, seconds));
+  const total = weights.reduce((s, w) => s + w, 0);
   let r = Math.random() * total;
-  for (const o of OUTCOMES) {
-    r -= o.weight;
-    if (r <= 0) return o;
+  for (let i = 0; i < OUTCOMES.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return OUTCOMES[i];
   }
   return OUTCOMES[OUTCOMES.length - 1];
 }

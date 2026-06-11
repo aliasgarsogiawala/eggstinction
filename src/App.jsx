@@ -43,7 +43,8 @@ function OnlineApp() {
   const buyPowerup = useMutation(api.leaderboard.buyPowerup);
 
   const doRoll = useCallback(
-    (kills) => rollGacha({ playerId, name, killStreak: kills }),
+    (kills, seconds) =>
+      rollGacha({ playerId, name, killStreak: kills, survivedSeconds: seconds }),
     [rollGacha, playerId, name]
   );
   const doBuy = useCallback(
@@ -84,8 +85,8 @@ function OfflineApp() {
     }
   });
 
-  const doRoll = useCallback(async (kills) => {
-    const o = rollLocal();
+  const doRoll = useCallback(async (kills, seconds) => {
+    const o = rollLocal(kills, seconds);
     setNetWorth((w) => {
       const next = w + o.delta;
       localStorage.setItem("sdg_netWorth", String(next));
@@ -145,6 +146,7 @@ function GameShell({
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
+  const [survived, setSurvived] = useState(0);
   const [resultKey, setResultKey] = useState(null);
   const [paused, setPaused] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
@@ -171,14 +173,15 @@ function GameShell({
   }, [phase, shopOpen]);
 
   const onFertilized = useCallback(
-    async ({ kills }) => {
+    async ({ kills, time }) => {
       setKills(kills);
+      setSurvived(time || 0);
       let res;
       try {
-        res = await doRoll(kills);
+        res = await doRoll(kills, time);
       } catch {
         // Network hiccup — roll locally so the game never stalls.
-        res = { outcomeKey: rollLocal().key };
+        res = { outcomeKey: rollLocal(kills, time).key };
       }
       setResultKey(res.outcomeKey);
       setPhase("rolling");
@@ -212,7 +215,9 @@ function GameShell({
               <strong>💥 Swimmer Destroyer</strong> score.
               <br />
               When (not if) the egg gets fertilized, you spin the gacha for the
-              kid's career and your <strong>💰 Net Worth</strong>.
+              kid's career and your <strong>💰 Net Worth</strong>.{" "}
+              <strong>The longer you survive, the better the odds</strong> — a
+              1-second run rolls pure luck.
               <br />
               <strong>Doctor? Engineer? …or a 34-year-old in your basement?</strong>
             </p>
@@ -277,6 +282,7 @@ function GameShell({
           <ResultCard
             resultKey={resultKey}
             kills={kills}
+            survived={survived}
             netWorth={netWorth}
             onAgain={() => {
               setResultKey(null);

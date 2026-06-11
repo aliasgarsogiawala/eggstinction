@@ -98,6 +98,20 @@ Rarer outcomes (the jackpots and the catastrophes) carry lower weights. The
 roll happens **on the server** (`convex/leaderboard.ts → rollGacha`) so nobody
 can forge a $2M Movie Star — the client only animates the result.
 
+### 🍀 Survival skews the odds
+
+The roll isn't pure luck. **How long you survive (plus your kill count) bends
+the distribution toward better careers** — so a player who holds out for 30
+seconds has genuinely better odds than someone who lasts one second, even
+though both *can* technically hit any outcome.
+
+Each outcome's weight is scaled by `weight · exp(TILT · luck · goodness)`,
+where `luck` ramps from 0 → 1 over ~60s survived / ~100 kills, and `goodness`
+is the outcome's payout normalized to ±1. At `luck = 0` you roll the base
+table; maxed out, the jackpots get up to ~9× their weight and the catastrophes
+drop to ~0.1×. The formula lives in both `convex/leaderboard.ts` (authoritative)
+and `src/game/outcomes.js` (offline + the result card's luck readout).
+
 ---
 
 ## 🏗️ Architecture
