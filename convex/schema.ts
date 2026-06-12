@@ -18,6 +18,7 @@ export default defineSchema({
     preserve: v.optional(
       v.array(v.object({ k: v.string(), x: v.number(), y: v.number() }))
     ),
+    preserveScenery: v.optional(v.string()), // chosen biome for the preserve
     powerups: v.optional(v.array(v.string())), // legacy field (pre-inventory docs)
     lastOutcome: v.optional(v.string()),
   })

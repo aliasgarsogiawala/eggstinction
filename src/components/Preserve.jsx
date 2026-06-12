@@ -4,9 +4,17 @@ import { DECOR, DECOR_CATS, decorByKey } from "../game/decor";
 import { fmtMoney } from "../game/outcomes";
 import { sound } from "../game/sound";
 
+const SCENERY_OPTS = [
+  { key: "jungle", emoji: "🌴", name: "Jungle" },
+  { key: "volcanic", emoji: "🌋", name: "Volcanic" },
+  { key: "swamp", emoji: "🐊", name: "Swamp" },
+  { key: "desert", emoji: "🏜️", name: "Desert" },
+  { key: "tundra", emoji: "❄️", name: "Tundra" },
+];
+
 // The Prehistoric Preserve — a cozy diorama you decorate with the DNA you earn
 // defending the nest. Pick a prop, click to place, drag to move, Delete to remove.
-export default function Preserve({ netWorth, items, onAdd, onSave, onClose }) {
+export default function Preserve({ netWorth, items, scenery = "jungle", onAdd, onSave, onSetScenery, onClose }) {
   const canvasRef = useRef(null);
   const sceneRef = useRef(null);
   const initialItems = useRef(items || []);
@@ -14,10 +22,12 @@ export default function Preserve({ netWorth, items, onAdd, onSave, onClose }) {
   const [dna, setDna] = useState(netWorth);
   const [placing, setPlacing] = useState(null);
   const [hasSel, setHasSel] = useState(false);
+  const [sceneryKey, setSceneryKey] = useState(scenery);
 
   useEffect(() => {
-    const scene = new PreserveScene(canvasRef.current, {
+    const sc = new PreserveScene(canvasRef.current, {
       items: initialItems.current,
+      scenery,
       onPlace: (key) => {
         const cost = decorByKey(key)?.cost ?? 0;
         if (dnaRef.current < cost) {
@@ -33,9 +43,9 @@ export default function Preserve({ netWorth, items, onAdd, onSave, onClose }) {
       onChange: (its) => onSave?.(its.map((i) => ({ k: i.k, x: i.x, y: i.y }))),
       onSelect: (h) => setHasSel(h),
     });
-    sceneRef.current = scene;
-    scene.start();
-    return () => scene.destroy();
+    sceneRef.current = sc;
+    sc.start();
+    return () => sc.destroy();
     // Mount once — the scene owns its own item list from here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -53,12 +63,31 @@ export default function Preserve({ netWorth, items, onAdd, onSave, onClose }) {
     sound.play("ui");
   };
 
+  const chooseScenery = (key) => {
+    setSceneryKey(key);
+    sceneRef.current?.setScenery(key);
+    onSetScenery?.(key);
+    sound.play("ui");
+  };
+
   return (
     <div className="preserve">
       <canvas ref={canvasRef} className="preserve-canvas" />
 
       <div className="preserve-top">
         <h2 className="preserve-title">🏞️ YOUR PRESERVE</h2>
+        <div className="scenery-picker">
+          {SCENERY_OPTS.map((s) => (
+            <button
+              key={s.key}
+              className={`scenery-btn ${sceneryKey === s.key ? "scenery-on" : ""}`}
+              onClick={() => chooseScenery(s.key)}
+              title={s.name}
+            >
+              {s.emoji}
+            </button>
+          ))}
+        </div>
         <div className={`networth ${dna < 0 ? "networth-broke" : ""}`}>🧬 {fmtMoney(dna)}</div>
         <div className="preserve-actions">
           <button className="btn-ghost" disabled={!hasSel} onClick={del}>

@@ -39,6 +39,19 @@ export default function App({ connected }) {
   return connected ? <OnlineApp /> : <OfflineApp />;
 }
 
+// How-to-play pointers, shown in a modal so the menu stays clean.
+const HOW_TO = [
+  "🎯 Aim with your mouse — the catapult follows your cursor. Hold to hurl boulders.",
+  "🌊 Survive escalating waves of predators. Every 3rd wave brings an Alpha boss.",
+  "🐢 Watch the variety: armoured brutes, darting flyers, charging dashers, splitters.",
+  "🦴 Every kill scores a point and pays DNA 🧬. Chain kills to build a COMBO.",
+  "🦖 A full COMBO charges your ROAR — press Space to blast the whole swarm back.",
+  "🐌 Let a predator get close and time slows down for a clutch save.",
+  "🛒 Spend DNA in the Bone Market: one-use charges (keys 1–5) + permanent upgrades.",
+  "🥚 When the nest breaks the egg hatches — survive longer for far better odds.",
+  "🏞️ Spend DNA in the Preserve to build your own prehistoric park.",
+];
+
 // ---------- Convex-backed ----------
 function OnlineApp() {
   const [playerId] = useState(getPlayerId);
@@ -50,6 +63,7 @@ function OnlineApp() {
   const buyUpgrade = useMutation(api.leaderboard.buyUpgrade);
   const addDecoration = useMutation(api.leaderboard.addDecoration);
   const updatePreserve = useMutation(api.leaderboard.updatePreserve);
+  const setScenery = useMutation(api.leaderboard.setScenery);
 
   const doRoll = useCallback(
     (kills, seconds) =>
@@ -76,6 +90,10 @@ function OnlineApp() {
     (items) => updatePreserve({ playerId, items }),
     [updatePreserve, playerId]
   );
+  const doSetScenery = useCallback(
+    (scenery) => setScenery({ playerId, name, scenery }),
+    [setScenery, playerId, name]
+  );
 
   return (
     <GameShell
@@ -88,12 +106,14 @@ function OnlineApp() {
       inventory={player?.inventory ?? {}}
       upgrades={player?.upgrades ?? {}}
       preserve={player?.preserve ?? []}
+      scenery={player?.preserveScenery ?? "jungle"}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
       doBuyUpgrade={doBuyUpgrade}
       doAddDecoration={doAddDecoration}
       doSavePreserve={doSavePreserve}
+      doSetScenery={doSetScenery}
     />
   );
 }
@@ -129,6 +149,9 @@ function OfflineApp() {
       return [];
     }
   });
+  const [scenery, setSceneryState] = useState(
+    () => localStorage.getItem("sdg_scenery") || "jungle"
+  );
 
   const doRoll = useCallback(async (kills, seconds) => {
     const o = rollLocal(kills, seconds);
@@ -213,6 +236,12 @@ function OfflineApp() {
     return { ok: true };
   }, []);
 
+  const doSetScenery = useCallback(async (key) => {
+    setSceneryState(key);
+    localStorage.setItem("sdg_scenery", key);
+    return { ok: true };
+  }, []);
+
   return (
     <GameShell
       connected={false}
@@ -224,12 +253,14 @@ function OfflineApp() {
       inventory={inventory}
       upgrades={upgrades}
       preserve={preserve}
+      scenery={scenery}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
       doBuyUpgrade={doBuyUpgrade}
       doAddDecoration={doAddDecoration}
       doSavePreserve={doSavePreserve}
+      doSetScenery={doSetScenery}
     />
   );
 }
@@ -245,12 +276,14 @@ function GameShell({
   inventory,
   upgrades,
   preserve,
+  scenery,
   doRoll,
   doBuy,
   doConsume,
   doBuyUpgrade,
   doAddDecoration,
   doSavePreserve,
+  doSetScenery,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
@@ -259,6 +292,7 @@ function GameShell({
   const [paused, setPaused] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [preserveOpen, setPreserveOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const [banner, setBanner] = useState(null);
   const [muted, setMuted] = useState(() => !sound.enabled);
   const bannerTimer = useRef(null);
@@ -356,26 +390,10 @@ function GameShell({
         {phase === "menu" && (
           <div className="menu">
             <div className="menu-egg">🥚</div>
-            <p className="menu-pitch">
-              <strong>How to play:</strong> a stone catapult sits on the last
-              dino egg and aims wherever you point.{" "}
-              <strong>Hold the mouse to hurl boulders.</strong> Predators charge
-              in from every edge — slow at first, then faster and faster. Every
-              one you crush adds to your <strong>🦴 Predators Culled</strong>{" "}
-              and pays <strong>🧬 DNA</strong>.
+            <p className="menu-tagline">
+              Defend the last dinosaur egg from the swarm.
               <br />
-              When (not if) the nest is breached, the egg hatches — spin the
-              gacha to see <strong>what your dino becomes</strong>.{" "}
-              <strong>The longer you survive, the better the odds.</strong>
-              <br />
-              <strong>T-Rex? Triceratops? …or just a sentient rock?</strong>
-              <br />
-              Chain kills for a <strong>COMBO</strong>, which charges your{" "}
-              <strong>ROAR</strong> — hit <strong>Space</strong> to blast the
-              whole swarm back. Watch for armoured <strong>brutes</strong> that
-              soak several hits. Spend DNA in the 🦴 Bone Market on charges
-              (keys <strong>1–5</strong>), and let a predator get close for a{" "}
-              <strong>slow-mo</strong> clutch save.
+              Hatch a <strong>legend</strong>… or a <strong>sentient rock</strong>.
             </p>
             <label className="name-row">
               I am&nbsp;
@@ -404,6 +422,25 @@ function GameShell({
                 }}
               >
                 🏞️ PRESERVE
+              </button>
+            </div>
+            <button className="btn-howto" onClick={() => setHowToOpen(true)}>
+              ❓ How to play
+            </button>
+          </div>
+        )}
+
+        {howToOpen && (
+          <div className="overlay" onClick={() => setHowToOpen(false)}>
+            <div className="howto-card" onClick={(e) => e.stopPropagation()}>
+              <h2>🎮 How to Play</h2>
+              <ul className="howto-list">
+                {HOW_TO.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+              <button className="btn-big" onClick={() => setHowToOpen(false)}>
+                GOT IT
               </button>
             </div>
           </div>
@@ -486,8 +523,10 @@ function GameShell({
         <Preserve
           netWorth={netWorth}
           items={preserve}
+          scenery={scenery}
           onAdd={doAddDecoration}
           onSave={doSavePreserve}
+          onSetScenery={doSetScenery}
           onClose={() => setPreserveOpen(false)}
         />
       )}

@@ -333,6 +333,26 @@ export const updatePreserve = mutation({
   },
 });
 
+/** Pick the preserve's biome/scenery (free — purely cosmetic). */
+export const setScenery = mutation({
+  args: { playerId: v.string(), name: v.string(), scenery: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { preserveScenery: args.scenery });
+    } else {
+      await ctx.db.insert("players", {
+        playerId: args.playerId, name: args.name, netWorth: 0,
+        babies: 0, totalKills: 0, bestKillStreak: 0, preserveScenery: args.scenery,
+      });
+    }
+    return { ok: true as const };
+  },
+});
+
 /** Fetch the current player's persistent record (net worth carries over). */
 export const getPlayer = query({
   args: { playerId: v.string() },
@@ -351,6 +371,7 @@ export const getPlayer = query({
       inventory: p.inventory ?? {},
       upgrades: p.upgrades ?? {},
       preserve: p.preserve ?? [],
+      preserveScenery: p.preserveScenery ?? "jungle",
     };
   },
 });

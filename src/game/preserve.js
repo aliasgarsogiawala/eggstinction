@@ -6,15 +6,49 @@
 
 const TAU = Math.PI * 2;
 
-// Ground band the items live on (normalised y).
-const GROUND_TOP = 0.4;
-const GROUND_BOT = 0.95;
+// Ground band the items live on (normalised y). Roomy, for a big diorama.
+const GROUND_TOP = 0.34;
+const GROUND_BOT = 0.97;
+
+const hexToRgb = (h) => [
+  parseInt(h.slice(1, 3), 16),
+  parseInt(h.slice(3, 5), 16),
+  parseInt(h.slice(5, 7), 16),
+];
+const lerpColor = (a, b, t) => {
+  const ca = hexToRgb(a);
+  const cb = hexToRgb(b);
+  return `rgb(${ca.map((v, i) => Math.round(v + (cb[i] - v) * t)).join(",")})`;
+};
+
+// Sky keyframes across a 24h day. `sun` is a vertical 0..1 (0 = high, 1 = on
+// the horizon); null = night (moon instead). Interpolated by the local clock.
+const SKY_KEYS = [
+  { h: 0, top: "#0a1230", hor: "#16213f", star: 1.0, sun: null },
+  { h: 5, top: "#1b2550", hor: "#3a3a66", star: 0.7, sun: null },
+  { h: 7, top: "#5a7fb0", hor: "#f0a85a", star: 0.15, sun: 0.86 },
+  { h: 12, top: "#6fb0e6", hor: "#dcebc0", star: 0, sun: 0.16 },
+  { h: 17, top: "#6a86b8", hor: "#f0a05a", star: 0.08, sun: 0.8 },
+  { h: 19, top: "#39355f", hor: "#e0703c", star: 0.4, sun: 0.96 },
+  { h: 21, top: "#141a3a", hor: "#22284a", star: 0.85, sun: null },
+  { h: 24, top: "#0a1230", hor: "#16213f", star: 1.0, sun: null },
+];
+
+// Biome palettes + their signature background feature.
+export const SCENERIES = {
+  jungle: { g0: "#7fb255", g1: "#4c7a34", hill: "#9cc06a", accent: "volcano", amb: null },
+  volcanic: { g0: "#6a4a3a", g1: "#2a1a14", hill: "#5a4030", accent: "lava", amb: "ash" },
+  swamp: { g0: "#5f6a42", g1: "#2f3a26", hill: "#566a45", accent: "water", amb: "fog" },
+  desert: { g0: "#e6c688", g1: "#c79a4e", hill: "#d8b46a", accent: "dunes", amb: null },
+  tundra: { g0: "#e6eef4", g1: "#a9c0cf", hill: "#cddde8", accent: "pines", amb: "snow" },
+};
 
 export class PreserveScene {
-  constructor(canvas, { items = [], onPlace, onChange, onSelect } = {}) {
+  constructor(canvas, { items = [], scenery = "jungle", onPlace, onChange, onSelect } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.items = items.map((it) => ({ ...it }));
+    this.scenery = SCENERIES[scenery] ? scenery : "jungle";
     this.onPlace = onPlace;
     this.onChange = onChange;
     this.onSelect = onSelect;
@@ -24,6 +58,7 @@ export class PreserveScene {
     this.mouse = { x: 0, y: 0, inside: false };
     this.t = 0;
     this.clouds = [];
+    this.amb = []; // ambient particles (ash / snow / fog)
 
     this.resize();
 
@@ -81,6 +116,39 @@ export class PreserveScene {
     }
   }
 
+  setScenery(key) {
+    if (SCENERIES[key]) {
+      this.scenery = key;
+      this.amb = [];
+    }
+  }
+
+  // Sky colours from the user's actual local time of day.
+  skyNow() {
+    const d = new Date();
+    const h = d.getHours() + d.getMinutes() / 60;
+    let a = SKY_KEYS[0];
+    let b = SKY_KEYS[1];
+    for (let i = 0; i < SKY_KEYS.length - 1; i++) {
+      if (h >= SKY_KEYS[i].h && h <= SKY_KEYS[i + 1].h) {
+        a = SKY_KEYS[i];
+        b = SKY_KEYS[i + 1];
+        break;
+      }
+    }
+    const t = (h - a.h) / ((b.h - a.h) || 1);
+    let sun = null;
+    if (a.sun != null && b.sun != null) sun = a.sun + (b.sun - a.sun) * t;
+    else if (a.sun != null) sun = a.sun;
+    else if (b.sun != null) sun = b.sun;
+    return {
+      top: lerpColor(a.top, b.top, t),
+      hor: lerpColor(a.hor, b.hor, t),
+      star: a.star + (b.star - a.star) * t,
+      sun,
+    };
+  }
+
   deleteSelected() {
     if (this.selected < 0) return;
     this.items.splice(this.selected, 1);
@@ -98,8 +166,8 @@ export class PreserveScene {
 
   // Depth scale: items lower on the ground read as nearer (bigger).
   scaleFor(y) {
-    const u = Math.min(this.w, this.h) * 0.12;
-    return u * (0.55 + ((y - GROUND_TOP) / (GROUND_BOT - GROUND_TOP)) * 0.85);
+    const u = Math.min(this.w, this.h) * 0.1;
+    return u * (0.5 + ((y - GROUND_TOP) / (GROUND_BOT - GROUND_TOP)) * 0.95);
   }
 
   hitTest(px, py) {
@@ -131,7 +199,11 @@ export class PreserveScene {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.clouds = [];
     for (let i = 0; i < 4; i++) {
-      this.clouds.push({ x: Math.random() * this.w, y: this.h * (0.08 + Math.random() * 0.2), s: 30 + Math.random() * 50, v: 6 + Math.random() * 10 });
+      this.clouds.push({ x: Math.random() * this.w, y: this.h * (0.06 + Math.random() * 0.16), s: 30 + Math.random() * 50, v: 6 + Math.random() * 10 });
+    }
+    this.stars = [];
+    for (let i = 0; i < 80; i++) {
+      this.stars.push({ x: Math.random(), y: Math.random() * 0.85, r: 0.3 + Math.random() * 1.2, p: Math.random() * TAU });
     }
   }
 
@@ -147,6 +219,7 @@ export class PreserveScene {
         cl.x += cl.v * dt;
         if (cl.x - cl.s > this.w) cl.x = -cl.s;
       }
+      this.updateAmbient(dt);
       this.draw();
       this.raf = requestAnimationFrame(loop);
     };
@@ -174,41 +247,71 @@ export class PreserveScene {
     const W = this.w;
     const H = this.h;
     const horizon = H * GROUND_TOP;
+    const sky = this.skyNow();
+    const night = sky.star; // 0 day .. 1 deep night
+    const sc = SCENERIES[this.scenery];
 
-    // Sky.
-    const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, "#7fb6e6");
-    sky.addColorStop(1, "#dcebc0");
-    ctx.fillStyle = sky;
+    // Sky gradient from the local clock.
+    const g = ctx.createLinearGradient(0, 0, 0, horizon);
+    g.addColorStop(0, sky.top);
+    g.addColorStop(1, sky.hor);
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, horizon);
 
-    // Sun + glow.
-    const sx = W * 0.82, sy = H * 0.16;
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 130);
-    sg.addColorStop(0, "rgba(255,245,200,0.95)");
-    sg.addColorStop(1, "rgba(255,245,200,0)");
-    ctx.fillStyle = sg;
-    ctx.fillRect(0, 0, W, horizon);
-    ctx.fillStyle = "#fff6cf";
-    ctx.beginPath();
-    ctx.arc(sx, sy, 34, 0, TAU);
-    ctx.fill();
+    // Stars at night.
+    if (night > 0.05) {
+      for (const st of this.stars) {
+        const tw = 0.4 + (Math.sin(this.t * 2 + st.p) * 0.5 + 0.5) * 0.6;
+        ctx.globalAlpha = night * tw;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(st.x * W, st.y * horizon, st.r, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
 
-    // Clouds.
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    for (const cl of this.clouds) this.cloud(cl.x, cl.y, cl.s);
+    // Sun (day) or moon (night).
+    const sx = W * 0.8;
+    if (sky.sun != null) {
+      const sy = horizon * (0.12 + sky.sun * 0.7);
+      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 150);
+      sg.addColorStop(0, "rgba(255,245,200,0.9)");
+      sg.addColorStop(1, "rgba(255,245,200,0)");
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, W, horizon);
+      ctx.fillStyle = "#fff6cf";
+      ctx.beginPath();
+      ctx.arc(sx, sy, 32, 0, TAU);
+      ctx.fill();
+    } else {
+      const my = horizon * 0.22;
+      ctx.fillStyle = "rgba(232,240,255,0.95)";
+      ctx.beginPath();
+      ctx.arc(sx, my, 24, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = sky.top; // crescent shadow
+      ctx.beginPath();
+      ctx.arc(sx + 9, my - 5, 22, 0, TAU);
+      ctx.fill();
+    }
 
-    // Distant hills + a calm volcano.
-    this.hills(horizon);
+    // Clouds (thin out at night).
+    if (night < 0.85) {
+      ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - night)})`;
+      for (const cl of this.clouds) this.cloud(cl.x, cl.y, cl.s);
+    }
 
-    // Ground.
+    // Biome hills + signature backdrop feature.
+    this.drawScenery(horizon, night);
+
+    // Ground in the biome's colours.
     const gnd = ctx.createLinearGradient(0, horizon, 0, H);
-    gnd.addColorStop(0, "#7fb255");
-    gnd.addColorStop(1, "#4c7a34");
+    gnd.addColorStop(0, sc.g0);
+    gnd.addColorStop(1, sc.g1);
     ctx.fillStyle = gnd;
     ctx.fillRect(0, horizon, W, H - horizon);
-    // Soft horizon seam.
-    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
     ctx.fillRect(0, horizon - 1, W, 3);
 
     // Items, back to front.
@@ -243,6 +346,15 @@ export class PreserveScene {
       if (fn) fn(ctx, x, y, s, this.t);
       ctx.globalAlpha = 1;
     }
+
+    // Ambient weather (ash / snow / fog) drifts over everything.
+    this.drawAmbient(horizon);
+
+    // Cool night tint over the whole scene.
+    if (night > 0.05) {
+      ctx.fillStyle = `rgba(14,20,46,${night * 0.45})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   shadow(x, y, s) {
@@ -263,10 +375,13 @@ export class PreserveScene {
     ctx.fill();
   }
 
-  hills(horizon) {
+  drawScenery(horizon, night) {
     const { ctx } = this;
     const W = this.w;
-    ctx.fillStyle = "#9cc06a";
+    const sc = SCENERIES[this.scenery];
+
+    // Rolling hills.
+    ctx.fillStyle = sc.hill;
     ctx.beginPath();
     ctx.moveTo(0, horizon);
     for (let x = 0; x <= W; x += 50) {
@@ -275,20 +390,105 @@ export class PreserveScene {
     ctx.lineTo(W, horizon);
     ctx.closePath();
     ctx.fill();
-    // Volcano on the right.
-    const vx = W * 0.7, vh = horizon * 0.42;
-    ctx.fillStyle = "#6f7f55";
-    ctx.beginPath();
-    ctx.moveTo(vx - vh, horizon);
-    ctx.lineTo(vx - vh * 0.22, horizon - vh);
-    ctx.lineTo(vx + vh * 0.22, horizon - vh);
-    ctx.lineTo(vx + vh, horizon);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "rgba(120,120,120,0.5)";
-    ctx.beginPath();
-    ctx.ellipse(vx, horizon - vh, vh * 0.22, vh * 0.05, 0, 0, TAU);
-    ctx.fill();
+
+    const vx = W * 0.72;
+    const vh = horizon * 0.42;
+    if (sc.accent === "volcano" || sc.accent === "lava") {
+      ctx.fillStyle = sc.accent === "lava" ? "#3a2018" : "#6f7f55";
+      ctx.beginPath();
+      ctx.moveTo(vx - vh, horizon);
+      ctx.lineTo(vx - vh * 0.22, horizon - vh);
+      ctx.lineTo(vx + vh * 0.22, horizon - vh);
+      ctx.lineTo(vx + vh, horizon);
+      ctx.closePath();
+      ctx.fill();
+      if (sc.accent === "lava") {
+        ctx.fillStyle = "rgba(255,110,40,0.9)";
+        ctx.beginPath();
+        ctx.ellipse(vx, horizon - vh, vh * 0.22, vh * 0.05, 0, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,90,30,0.7)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(vx - vh * 0.1, horizon - vh);
+        ctx.lineTo(vx - vh * 0.3, horizon - vh * 0.4);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "rgba(120,120,120,0.5)";
+        ctx.beginPath();
+        ctx.ellipse(vx, horizon - vh, vh * 0.22, vh * 0.05, 0, 0, TAU);
+        ctx.fill();
+      }
+    } else if (sc.accent === "water") {
+      // A still lake along the horizon.
+      ctx.fillStyle = night > 0.4 ? "#1d3550" : "#4f86a4";
+      ctx.fillRect(0, horizon, W, this.h * 0.06);
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(0, horizon + 4, W, 2);
+    } else if (sc.accent === "dunes") {
+      ctx.fillStyle = sc.hill;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(W * (0.25 + i * 0.28), horizon, W * 0.22, horizon * 0.16, 0, Math.PI, TAU);
+        ctx.fill();
+      }
+    } else if (sc.accent === "pines") {
+      ctx.fillStyle = "#5a7466";
+      for (let i = 0; i < 9; i++) {
+        const px = (i / 8) * W;
+        const ph = horizon * (0.16 + (i % 3) * 0.04);
+        ctx.beginPath();
+        ctx.moveTo(px, horizon);
+        ctx.lineTo(px - ph * 0.4, horizon);
+        ctx.lineTo(px, horizon - ph);
+        ctx.lineTo(px + ph * 0.4, horizon);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  updateAmbient(dt) {
+    const sc = SCENERIES[this.scenery];
+    if (!sc.amb) {
+      this.amb.length = 0;
+      return;
+    }
+    const W = this.w;
+    const H = this.h;
+    const rate = sc.amb === "fog" ? 1 : 8;
+    if (Math.random() < dt * rate && this.amb.length < 120) {
+      if (sc.amb === "ash") this.amb.push({ x: Math.random() * W, y: -10, vx: -10 + Math.random() * 26, vy: 18 + Math.random() * 26, r: 1 + Math.random() * 2, sway: Math.random() * TAU });
+      else if (sc.amb === "snow") this.amb.push({ x: Math.random() * W, y: -10, vx: -8 + Math.random() * 16, vy: 24 + Math.random() * 26, r: 1.5 + Math.random() * 2.5, sway: Math.random() * TAU });
+      else this.amb.push({ x: -120, y: H * (0.45 + Math.random() * 0.45), vx: 12 + Math.random() * 14, vy: 0, r: 60 + Math.random() * 80, sway: 0, fog: true });
+    }
+    for (const a of this.amb) {
+      a.sway += dt;
+      a.x += (a.vx + Math.sin(a.sway) * (a.fog ? 0 : 7)) * dt;
+      a.y += a.vy * dt;
+    }
+    this.amb = this.amb.filter((a) => a.y < H + 20 && a.x < W + 160);
+  }
+
+  drawAmbient() {
+    const { ctx } = this;
+    const sc = SCENERIES[this.scenery];
+    if (!sc.amb) return;
+    if (sc.amb === "fog") {
+      ctx.fillStyle = "rgba(200,210,200,0.10)";
+      for (const a of this.amb) {
+        ctx.beginPath();
+        ctx.ellipse(a.x, a.y, a.r, a.r * 0.3, 0, 0, TAU);
+        ctx.fill();
+      }
+      return;
+    }
+    ctx.fillStyle = sc.amb === "ash" ? "rgba(120,110,100,0.6)" : "rgba(255,255,255,0.85)";
+    for (const a of this.amb) {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.r, 0, TAU);
+      ctx.fill();
+    }
   }
 }
 

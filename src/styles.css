@@ -274,6 +274,72 @@ body {
 }
 
 .menu-pitch { font-size: 17px; line-height: 1.6; opacity: 0.9; max-width: 480px; }
+.menu-tagline {
+  font-size: clamp(17px, 2.1vw, 23px);
+  line-height: 1.6;
+  opacity: 0.92;
+  max-width: 460px;
+}
+
+.btn-howto {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.75;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-howto:hover { opacity: 1; color: var(--gold); }
+
+/* ---------- how-to modal ---------- */
+.howto-card {
+  width: min(540px, 92%);
+  max-height: 86%;
+  overflow-y: auto;
+  padding: 28px;
+  border-radius: 22px;
+  text-align: left;
+  background: linear-gradient(180deg, #2c3a22, var(--panel));
+  border: 5px solid var(--gold);
+  box-shadow: 0 0 60px #000c;
+  animation: slam 0.35s both;
+}
+.howto-card h2 {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 26px;
+  color: var(--gold);
+  text-align: center;
+  margin-bottom: 16px;
+}
+.howto-list { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-bottom: 20px; }
+.howto-list li {
+  font-weight: 700;
+  font-size: 14.5px;
+  line-height: 1.4;
+  background: #16210f;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.howto-card .btn-big { display: block; margin: 0 auto; }
+
+/* ---------- scenery picker ---------- */
+.scenery-picker { display: flex; gap: 6px; }
+.scenery-btn {
+  font-size: 18px;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(27, 42, 26, 0.9);
+  border: 2px solid #33402a;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.15s;
+}
+.scenery-btn:hover { transform: translateY(-2px); border-color: var(--gold); }
+.scenery-on { border-color: var(--gold); background: #24361c; }
 
 .name-row { font-weight: 800; font-size: 16px; }
 .name-input {
