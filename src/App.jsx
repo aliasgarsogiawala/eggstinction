@@ -363,6 +363,7 @@ function GameShell({
   return (
     <>
       <Backdrop />
+      <div className="watermark">made by Aliasgar Sogiawala</div>
       <div className="layout">
       <main className="play-area">
         <header className="hud">

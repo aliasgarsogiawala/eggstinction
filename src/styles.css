@@ -18,6 +18,22 @@ body {
   overflow: hidden;
 }
 
+/* Signature watermark, fixed in the corner above everything. */
+.watermark {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  z-index: 50;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+  opacity: 0.4;
+  pointer-events: none;
+  text-shadow: 0 1px 3px #000a;
+  user-select: none;
+}
+
 /* Animated 65-mya backdrop sits behind everything. */
 .backdrop {
   position: fixed;
