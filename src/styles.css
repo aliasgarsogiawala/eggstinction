@@ -583,6 +583,72 @@ body {
 .up-pip { width: 16px; height: 6px; border-radius: 3px; background: #33402a; }
 .up-pip.on { background: var(--green); }
 
+/* ---------- trophies & dex ---------- */
+.trophies {
+  width: min(760px, 94%);
+  max-height: 90%;
+  overflow-y: auto;
+  padding: 26px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #2c3a22, var(--panel));
+  border: 5px solid var(--gold);
+  box-shadow: 0 0 60px #000c;
+  animation: slam 0.35s both;
+}
+.menu-sublinks { display: flex; gap: 18px; }
+.lb-prestige { font-style: normal; color: var(--gold); font-weight: 900; font-size: 11px; margin-left: 4px; }
+
+.troph-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.troph-row {
+  display: flex; align-items: center; gap: 12px;
+  background: #16210f; border: 2px solid #33402a; border-radius: 12px; padding: 12px 14px;
+}
+.troph-done { border-color: var(--green); }
+.troph-emoji { font-size: 26px; }
+.troph-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.troph-reward { color: var(--green); font-weight: 900; font-size: 13px; }
+.troph-state { font-size: 20px; }
+
+.ach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+@media (max-width: 560px) { .ach-grid { grid-template-columns: 1fr; } }
+.ach-card {
+  display: flex; gap: 10px;
+  background: #16210f; border: 2px solid #33402a; border-radius: 12px; padding: 10px 12px;
+}
+.ach-on { border-color: var(--gold); }
+.ach-off { opacity: 0.55; }
+.ach-emoji { font-size: 30px; flex-shrink: 0; }
+.ach-info strong { font-size: 14px; }
+.ach-info p { font-size: 12px; opacity: 0.75; line-height: 1.3; margin: 2px 0; }
+
+.dex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.dex-card {
+  background: #16210f; border: 2px solid #33402a; border-radius: 12px;
+  padding: 10px 6px; text-align: center;
+}
+.dex-locked { opacity: 0.45; }
+.dex-emoji { font-size: 30px; }
+.dex-name { font-size: 11px; font-weight: 800; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dex-stats { font-size: 10px; opacity: 0.7; margin-top: 2px; }
+
+.prestige-pane { text-align: center; padding: 12px 0 4px; }
+.prestige-mult { font-family: "Luckiest Guy", cursive; font-size: 42px; color: var(--gold); }
+.prestige-warn { font-size: 13px; opacity: 0.85; max-width: 440px; margin: 10px auto 16px; line-height: 1.5; }
+.prestige-locked { filter: grayscale(0.6); opacity: 0.6; cursor: not-allowed; }
+.prestige-stats { margin-top: 16px; font-size: 12px; opacity: 0.7; font-weight: 700; }
+
+.result-rewards { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.reward-line {
+  font-size: 12.5px; font-weight: 800;
+  background: #16210f; border-radius: 8px; padding: 7px 10px;
+}
+.reward-good { color: var(--green); }
+
 .shop-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

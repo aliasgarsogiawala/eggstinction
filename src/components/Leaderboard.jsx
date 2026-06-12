@@ -87,6 +87,7 @@ function BoardList({ rows, playerId, emptyLabel, value, negative }) {
           <span className="lb-rank">{MEDALS[i] ?? `#${i + 1}`}</span>
           <span className="lb-name">
             {p.name}
+            {p.prestige > 0 && <em className="lb-prestige">⭐{p.prestige}</em>}
             {p.lastOutcome && (
               <em className="lb-last">{outcomeByKey(p.lastOutcome)?.emoji}</em>
             )}

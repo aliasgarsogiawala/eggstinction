@@ -19,6 +19,18 @@ export default defineSchema({
       v.array(v.object({ k: v.string(), x: v.number(), y: v.number() }))
     ),
     preserveScenery: v.optional(v.string()), // chosen biome for the preserve
+    // --- meta progression ---
+    totalBossKills: v.optional(v.number()),
+    bestCombo: v.optional(v.number()),
+    bestTime: v.optional(v.number()), // best survival seconds in a single run
+    prestige: v.optional(v.number()), // number of times cashed out
+    achievements: v.optional(v.array(v.string())), // unlocked achievement keys
+    challengeDay: v.optional(v.string()), // YYYY-M-D of the current daily set
+    challengesDone: v.optional(v.array(v.string())), // challenge keys done today
+    // Hatchling dex: species key → { count, bestTime }.
+    collection: v.optional(
+      v.record(v.string(), v.object({ count: v.number(), bestTime: v.number() }))
+    ),
     powerups: v.optional(v.array(v.string())), // legacy field (pre-inventory docs)
     lastOutcome: v.optional(v.string()),
   })

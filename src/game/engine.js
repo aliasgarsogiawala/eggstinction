@@ -68,6 +68,10 @@ export class EggDefense {
     this.comboTimer = 0;
     this.roar = 0; // 0..1 charge, fills with kills; spend for a shockwave
     this.shockwaves = [];
+    // Run stats for daily challenges / achievements.
+    this.maxCombo = 0;
+    this.usedPowerup = false;
+    this.bossKills = 0;
 
     // Meta-progression upgrades applied to this run.
     const up = this.upgrades;
@@ -180,6 +184,7 @@ export class EggDefense {
   // Consume a powerup charge mid-run. Buffs are timed; shield is a one-hit guard.
   activate(key) {
     if (this.over) return;
+    this.usedPowerup = true;
     const DURATIONS = { rapidfire: 8, tripleshot: 8, slowfield: 6, pierce: 8 };
     if (key === "shield") {
       this.shield = true;
@@ -215,6 +220,8 @@ export class EggDefense {
     const worth = boss ? 18 : 1; // bosses are worth a pile of DNA
     this.kills += worth;
     this.combo++;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    if (boss) this.bossKills++;
     this.comboTimer = 2;
     this.roar = Math.min(1, this.roar + this.roarGain + this.combo * 0.004);
     this.shake = Math.min(this.shake + (big ? 4 : 1), boss ? 12 : 5);
@@ -393,7 +400,14 @@ export class EggDefense {
       this.updateParticles(dt);
       if (performance.now() - this.fertilizedAt > 1400) {
         this.stop();
-        this.onFertilized?.({ kills: this.kills, time: this.elapsed });
+        this.onFertilized?.({
+          kills: this.kills,
+          time: this.elapsed,
+          maxCombo: this.maxCombo,
+          usedPowerup: this.usedPowerup,
+          wave: this.wave,
+          bossKills: this.bossKills,
+        });
       }
       return;
     }

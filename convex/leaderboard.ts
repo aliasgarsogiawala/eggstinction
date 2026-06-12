@@ -65,49 +65,208 @@ function rollOutcome(kills: number, seconds: number) {
   return OUTCOMES[OUTCOMES.length - 1];
 }
 
-/** Roll the gacha and apply the result to the player's persistent Net Worth. */
+// ---------------- meta progression (mirror src/game/meta.js) ----------------
+type Challenge = { key: string; type: string; target: number; reward: number };
+const CHALLENGE_POOL: Challenge[] = [
+  { key: "kills50", type: "kills", target: 50, reward: 100_000 },
+  { key: "survive90", type: "time", target: 90, reward: 100_000 },
+  { key: "combo20", type: "combo", target: 20, reward: 80_000 },
+  { key: "nopwr30", type: "killsNoPower", target: 30, reward: 120_000 },
+  { key: "wave5", type: "wave", target: 5, reward: 90_000 },
+  { key: "boss1", type: "boss", target: 1, reward: 110_000 },
+  { key: "kills100", type: "kills", target: 100, reward: 200_000 },
+  { key: "combo35", type: "combo", target: 35, reward: 160_000 },
+];
+
+function hashStr(s: string) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+function todaysChallenges(dateStr: string): Challenge[] {
+  let h = hashStr(dateStr);
+  const pool = CHALLENGE_POOL.slice();
+  const pick: Challenge[] = [];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+    pick.push(pool.splice(h % pool.length, 1)[0]);
+  }
+  return pick;
+}
+type Run = { kills: number; time: number; combo: number; usedPowerup: boolean; wave: number; bossKills: number };
+function challengeMet(c: Challenge, r: Run) {
+  switch (c.type) {
+    case "kills": return r.kills >= c.target;
+    case "time": return r.time >= c.target;
+    case "combo": return r.combo >= c.target;
+    case "killsNoPower": return !r.usedPowerup && r.kills >= c.target;
+    case "wave": return r.wave >= c.target;
+    case "boss": return r.bossKills >= c.target;
+    default: return false;
+  }
+}
+
+type Stats = {
+  totalKills: number; totalBossKills: number; bestCombo: number; bestTime: number;
+  dexCount: number; prestige: number; preserveCount: number; trex: number;
+};
+const ACHIEVEMENTS: { key: string; reward: number; check: (s: Stats) => boolean }[] = [
+  { key: "first_kill", reward: 5_000, check: (s) => s.totalKills >= 1 },
+  { key: "trex", reward: 100_000, check: (s) => s.trex >= 1 },
+  { key: "kills200", reward: 30_000, check: (s) => s.totalKills >= 200 },
+  { key: "kills1000", reward: 120_000, check: (s) => s.totalKills >= 1000 },
+  { key: "survive300", reward: 100_000, check: (s) => s.bestTime >= 300 },
+  { key: "combo50", reward: 80_000, check: (s) => s.bestCombo >= 50 },
+  { key: "dex5", reward: 40_000, check: (s) => s.dexCount >= 5 },
+  { key: "dex10", reward: 90_000, check: (s) => s.dexCount >= 10 },
+  { key: "dexall", reward: 500_000, check: (s) => s.dexCount >= 20 },
+  { key: "boss10", reward: 80_000, check: (s) => s.totalBossKills >= 10 },
+  { key: "ranger", reward: 30_000, check: (s) => s.preserveCount >= 10 },
+  { key: "prestige1", reward: 0, check: (s) => s.prestige >= 1 },
+];
+const PRESTIGE_COST = 5_000_000;
+
+/** Roll the gacha, bank DNA, and resolve daily challenges + achievements. */
 export const rollGacha = mutation({
   args: {
     playerId: v.string(),
     name: v.string(),
     killStreak: v.number(),
     survivedSeconds: v.optional(v.number()),
+    maxCombo: v.optional(v.number()),
+    usedPowerup: v.optional(v.boolean()),
+    wave: v.optional(v.number()),
+    bossKills: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const outcome = rollOutcome(args.killStreak, args.survivedSeconds ?? 0);
+    const seconds = args.survivedSeconds ?? 0;
+    const outcome = rollOutcome(args.killStreak, seconds);
     const existing = await ctx.db
       .query("players")
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
       .unique();
-    // The DNA Splicer upgrade boosts DNA earned per kill.
-    const greed = existing?.upgrades?.greed ?? 0;
-    const killEarnings = Math.round(
-      args.killStreak * KILL_REWARD * (1 + 0.25 * greed)
-    );
-    const totalDelta = outcome.delta + killEarnings;
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        name: args.name,
-        netWorth: existing.netWorth + totalDelta,
-        babies: existing.babies + 1,
-        totalKills: (existing.totalKills ?? 0) + args.killStreak,
-        bestKillStreak: Math.max(existing.bestKillStreak ?? 0, args.killStreak),
-        lastOutcome: outcome.key,
-      });
-    } else {
-      await ctx.db.insert("players", {
-        playerId: args.playerId,
-        name: args.name,
-        netWorth: totalDelta,
-        babies: 1,
-        totalKills: args.killStreak,
-        bestKillStreak: args.killStreak,
-        inventory: {},
-        lastOutcome: outcome.key,
-      });
+    const run: Run = {
+      kills: args.killStreak,
+      time: seconds,
+      combo: args.maxCombo ?? 0,
+      usedPowerup: args.usedPowerup ?? false,
+      wave: args.wave ?? 0,
+      bossKills: args.bossKills ?? 0,
+    };
+
+    const prestige = existing?.prestige ?? 0;
+    const mult = 1 + 0.25 * prestige;
+    const greed = existing?.upgrades?.greed ?? 0;
+    const killEarnings = Math.round(args.killStreak * KILL_REWARD * (1 + 0.25 * greed));
+
+    // Lifetime stat rollup.
+    const totalKills = (existing?.totalKills ?? 0) + args.killStreak;
+    const totalBossKills = (existing?.totalBossKills ?? 0) + run.bossKills;
+    const bestCombo = Math.max(existing?.bestCombo ?? 0, run.combo);
+    const bestTime = Math.max(existing?.bestTime ?? 0, seconds);
+
+    // Hatchling dex.
+    const collection = { ...(existing?.collection ?? {}) };
+    const prev = collection[outcome.key] ?? { count: 0, bestTime: 0 };
+    collection[outcome.key] = { count: prev.count + 1, bestTime: Math.max(prev.bestTime, seconds) };
+
+    // Daily challenges (reset on a new day).
+    const day = todayStr();
+    let challengeDay = existing?.challengeDay;
+    let challengesDone = existing?.challengesDone ?? [];
+    if (challengeDay !== day) {
+      challengeDay = day;
+      challengesDone = [];
     }
-    return { outcomeKey: outcome.key, delta: outcome.delta, killEarnings };
+    const newChallenges: string[] = [];
+    let bonus = 0;
+    for (const c of todaysChallenges(day)) {
+      if (!challengesDone.includes(c.key) && challengeMet(c, run)) {
+        challengesDone = [...challengesDone, c.key];
+        newChallenges.push(c.key);
+        bonus += c.reward;
+      }
+    }
+
+    // Achievements.
+    const stats: Stats = {
+      totalKills, totalBossKills, bestCombo, bestTime,
+      dexCount: Object.keys(collection).length,
+      prestige,
+      preserveCount: existing?.preserve?.length ?? 0,
+      trex: collection["trex"]?.count ?? 0,
+    };
+    const have = existing?.achievements ?? [];
+    const newAchievements: string[] = [];
+    let achBonus = 0;
+    for (const a of ACHIEVEMENTS) {
+      if (!have.includes(a.key) && a.check(stats)) {
+        newAchievements.push(a.key);
+        achBonus += a.reward;
+      }
+    }
+    const achievements = [...have, ...newAchievements];
+
+    // Total DNA this run — prestige multiplies positive gains.
+    let gained = outcome.delta + killEarnings + bonus + achBonus;
+    if (gained > 0) gained = Math.round(gained * mult);
+    const nextWorth = (existing?.netWorth ?? 0) + gained;
+
+    const fields = {
+      name: args.name,
+      netWorth: nextWorth,
+      totalKills,
+      bestKillStreak: Math.max(existing?.bestKillStreak ?? 0, args.killStreak),
+      totalBossKills,
+      bestCombo,
+      bestTime,
+      collection,
+      challengeDay,
+      challengesDone,
+      achievements,
+      lastOutcome: outcome.key,
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, { ...fields, babies: existing.babies + 1 });
+    } else {
+      await ctx.db.insert("players", { ...fields, playerId: args.playerId, babies: 1 });
+    }
+    return {
+      outcomeKey: outcome.key,
+      delta: outcome.delta,
+      killEarnings,
+      bonusDNA: bonus + achBonus,
+      mult,
+      newChallenges,
+      newAchievements,
+    };
+  },
+});
+
+/** Cash out at PRESTIGE_COST DNA for a permanent +25% multiplier per level. */
+export const prestige = mutation({
+  args: { playerId: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+    if (!existing || existing.netWorth < PRESTIGE_COST) {
+      return { ok: false as const, reason: "locked" as const };
+    }
+    const nextP = (existing.prestige ?? 0) + 1;
+    const have = existing.achievements ?? [];
+    const achievements = have.includes("prestige1") ? have : [...have, "prestige1"];
+    await ctx.db.patch(existing._id, { netWorth: 0, prestige: nextP, achievements });
+    return { ok: true as const, prestige: nextP, mult: 1 + 0.25 * nextP };
   },
 });
 
@@ -125,6 +284,7 @@ export const topPlayers = query({
       name: p.name,
       netWorth: p.netWorth,
       babies: p.babies,
+      prestige: p.prestige ?? 0,
       lastOutcome: p.lastOutcome,
     }));
   },
@@ -362,6 +522,7 @@ export const getPlayer = query({
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
       .unique();
     if (!p) return null;
+    const day = todayStr();
     return {
       name: p.name,
       netWorth: p.netWorth,
@@ -372,6 +533,17 @@ export const getPlayer = query({
       upgrades: p.upgrades ?? {},
       preserve: p.preserve ?? [],
       preserveScenery: p.preserveScenery ?? "jungle",
+      prestige: p.prestige ?? 0,
+      totalBossKills: p.totalBossKills ?? 0,
+      bestCombo: p.bestCombo ?? 0,
+      bestTime: p.bestTime ?? 0,
+      achievements: p.achievements ?? [],
+      collection: p.collection ?? {},
+      daily: {
+        day,
+        keys: todaysChallenges(day).map((c) => c.key),
+        done: p.challengeDay === day ? p.challengesDone ?? [] : [],
+      },
     };
   },
 });

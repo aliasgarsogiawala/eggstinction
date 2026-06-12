@@ -8,7 +8,16 @@ import Leaderboard from "./components/Leaderboard";
 import Marketplace from "./components/Marketplace";
 import Backdrop from "./components/Backdrop";
 import Preserve from "./components/Preserve";
+import Trophies from "./components/Trophies";
 import { decorByKey } from "./game/decor";
+import {
+  todayStr,
+  todaysChallenges,
+  challengeMet,
+  newlyEarned,
+  achievementByKey,
+  PRESTIGE_COST,
+} from "./game/meta";
 import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
 import { upgradeByKey, upgradeCost } from "./game/upgrades";
@@ -64,12 +73,23 @@ function OnlineApp() {
   const addDecoration = useMutation(api.leaderboard.addDecoration);
   const updatePreserve = useMutation(api.leaderboard.updatePreserve);
   const setScenery = useMutation(api.leaderboard.setScenery);
+  const prestige = useMutation(api.leaderboard.prestige);
 
   const doRoll = useCallback(
-    (kills, seconds) =>
-      rollGacha({ playerId, name, killStreak: kills, survivedSeconds: seconds }),
+    (run) =>
+      rollGacha({
+        playerId,
+        name,
+        killStreak: run.kills,
+        survivedSeconds: run.time,
+        maxCombo: run.maxCombo,
+        usedPowerup: run.usedPowerup,
+        wave: run.wave,
+        bossKills: run.bossKills,
+      }),
     [rollGacha, playerId, name]
   );
+  const doPrestige = useCallback(() => prestige({ playerId, name }), [prestige, playerId, name]);
   const doBuy = useCallback(
     (powerup) => buyPowerup({ playerId, name, powerup }),
     [buyPowerup, playerId, name]
@@ -95,6 +115,16 @@ function OnlineApp() {
     [setScenery, playerId, name]
   );
 
+  const meta = {
+    prestige: player?.prestige ?? 0,
+    achievements: player?.achievements ?? [],
+    collection: player?.collection ?? {},
+    daily: player?.daily ?? { day: "", keys: [], done: [] },
+    bestCombo: player?.bestCombo ?? 0,
+    bestTime: player?.bestTime ?? 0,
+    totalBossKills: player?.totalBossKills ?? 0,
+  };
+
   return (
     <GameShell
       connected
@@ -107,6 +137,7 @@ function OnlineApp() {
       upgrades={player?.upgrades ?? {}}
       preserve={player?.preserve ?? []}
       scenery={player?.preserveScenery ?? "jungle"}
+      meta={meta}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
@@ -114,6 +145,7 @@ function OnlineApp() {
       doAddDecoration={doAddDecoration}
       doSavePreserve={doSavePreserve}
       doSetScenery={doSetScenery}
+      doPrestige={doPrestige}
     />
   );
 }
@@ -152,22 +184,102 @@ function OfflineApp() {
   const [scenery, setSceneryState] = useState(
     () => localStorage.getItem("sdg_scenery") || "jungle"
   );
+  const [meta, setMeta] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sdg_meta") || "{}");
+    } catch {
+      return {};
+    }
+  });
 
-  const doRoll = useCallback(async (kills, seconds) => {
-    const o = rollLocal(kills, seconds);
-    const earnings = (kills || 0) * KILL_REWARD;
-    setNetWorth((w) => {
-      const next = w + o.delta + earnings;
-      localStorage.setItem("sdg_netWorth", String(next));
-      return next;
-    });
-    setTotalKills((k) => {
-      const next = k + (kills || 0);
-      localStorage.setItem("sdg_totalKills", String(next));
-      return next;
-    });
-    return { outcomeKey: o.key, delta: o.delta, killEarnings: earnings };
-  }, []);
+  const doRoll = useCallback(
+    async (run) => {
+      const o = rollLocal(run.kills, run.time);
+      const prestigeLv = meta.prestige || 0;
+      const mult = 1 + 0.25 * prestigeLv;
+      const greed = upgrades.greed || 0;
+      const killEarnings = Math.round(run.kills * KILL_REWARD * (1 + 0.25 * greed));
+
+      const totalKills2 = totalKills + run.kills;
+      const totalBossKills = (meta.totalBossKills || 0) + (run.bossKills || 0);
+      const bestCombo = Math.max(meta.bestCombo || 0, run.maxCombo || 0);
+      const bestTime = Math.max(meta.bestTime || 0, run.time || 0);
+
+      const collection = { ...(meta.collection || {}) };
+      const prev = collection[o.key] || { count: 0, bestTime: 0 };
+      collection[o.key] = { count: prev.count + 1, bestTime: Math.max(prev.bestTime, run.time || 0) };
+
+      const day = todayStr();
+      let challengeDay = meta.challengeDay;
+      let done = meta.challengesDone || [];
+      if (challengeDay !== day) {
+        challengeDay = day;
+        done = [];
+      }
+      const runObj = {
+        kills: run.kills, time: run.time || 0, combo: run.maxCombo || 0,
+        usedPowerup: !!run.usedPowerup, wave: run.wave || 0, bossKills: run.bossKills || 0,
+      };
+      const newChallenges = [];
+      let bonus = 0;
+      for (const c of todaysChallenges(day)) {
+        if (!done.includes(c.key) && challengeMet(c, runObj)) {
+          done = [...done, c.key];
+          newChallenges.push(c.key);
+          bonus += c.reward;
+        }
+      }
+
+      const stats = {
+        totalKills: totalKills2, totalBossKills, bestCombo, bestTime,
+        dexCount: Object.keys(collection).length, prestige: prestigeLv,
+        preserveCount: preserve.length, trex: collection.trex?.count || 0,
+      };
+      const have = meta.achievements || [];
+      const newAchievements = newlyEarned(stats, have);
+      let achBonus = 0;
+      for (const k of newAchievements) achBonus += achievementByKey(k)?.reward || 0;
+      const achievements = [...have, ...newAchievements];
+
+      let gained = o.delta + killEarnings + bonus + achBonus;
+      if (gained > 0) gained = Math.round(gained * mult);
+
+      setNetWorth((w) => {
+        const next = w + gained;
+        localStorage.setItem("sdg_netWorth", String(next));
+        return next;
+      });
+      setTotalKills(() => {
+        localStorage.setItem("sdg_totalKills", String(totalKills2));
+        return totalKills2;
+      });
+      const nextMeta = {
+        prestige: prestigeLv, achievements, collection,
+        challengeDay, challengesDone: done, totalBossKills, bestCombo, bestTime,
+      };
+      setMeta(nextMeta);
+      localStorage.setItem("sdg_meta", JSON.stringify(nextMeta));
+
+      return {
+        outcomeKey: o.key, delta: o.delta, killEarnings,
+        bonusDNA: bonus + achBonus, mult, newChallenges, newAchievements,
+      };
+    },
+    [meta, upgrades, totalKills, preserve]
+  );
+
+  const doPrestige = useCallback(async () => {
+    if (netWorth < PRESTIGE_COST) return { ok: false, reason: "locked" };
+    const nextP = (meta.prestige || 0) + 1;
+    const have = meta.achievements || [];
+    const achievements = have.includes("prestige1") ? have : [...have, "prestige1"];
+    setNetWorth(0);
+    localStorage.setItem("sdg_netWorth", "0");
+    const nextMeta = { ...meta, prestige: nextP, achievements };
+    setMeta(nextMeta);
+    localStorage.setItem("sdg_meta", JSON.stringify(nextMeta));
+    return { ok: true, prestige: nextP, mult: 1 + 0.25 * nextP };
+  }, [netWorth, meta]);
 
   const doBuy = useCallback(
     async (key) => {
@@ -242,6 +354,21 @@ function OfflineApp() {
     return { ok: true };
   }, []);
 
+  const day = todayStr();
+  const metaObj = {
+    prestige: meta.prestige ?? 0,
+    achievements: meta.achievements ?? [],
+    collection: meta.collection ?? {},
+    daily: {
+      day,
+      keys: todaysChallenges(day).map((c) => c.key),
+      done: meta.challengeDay === day ? meta.challengesDone ?? [] : [],
+    },
+    bestCombo: meta.bestCombo ?? 0,
+    bestTime: meta.bestTime ?? 0,
+    totalBossKills: meta.totalBossKills ?? 0,
+  };
+
   return (
     <GameShell
       connected={false}
@@ -254,6 +381,7 @@ function OfflineApp() {
       upgrades={upgrades}
       preserve={preserve}
       scenery={scenery}
+      meta={metaObj}
       doRoll={doRoll}
       doBuy={doBuy}
       doConsume={doConsume}
@@ -261,6 +389,7 @@ function OfflineApp() {
       doAddDecoration={doAddDecoration}
       doSavePreserve={doSavePreserve}
       doSetScenery={doSetScenery}
+      doPrestige={doPrestige}
     />
   );
 }
@@ -277,6 +406,7 @@ function GameShell({
   upgrades,
   preserve,
   scenery,
+  meta,
   doRoll,
   doBuy,
   doConsume,
@@ -284,6 +414,7 @@ function GameShell({
   doAddDecoration,
   doSavePreserve,
   doSetScenery,
+  doPrestige,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
   const [kills, setKills] = useState(0);
@@ -293,6 +424,8 @@ function GameShell({
   const [shopOpen, setShopOpen] = useState(false);
   const [preserveOpen, setPreserveOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
+  const [trophiesOpen, setTrophiesOpen] = useState(false);
+  const [rewards, setRewards] = useState(null);
   const [banner, setBanner] = useState(null);
   const [muted, setMuted] = useState(() => !sound.enabled);
   const bannerTimer = useRef(null);
@@ -344,17 +477,23 @@ function GameShell({
   }, [phase, shopOpen]);
 
   const onFertilized = useCallback(
-    async ({ kills, time }) => {
-      setKills(kills);
-      setSurvived(time || 0);
+    async (run) => {
+      setKills(run.kills);
+      setSurvived(run.time || 0);
       let res;
       try {
-        res = await doRoll(kills, time);
+        res = await doRoll(run);
       } catch {
         // Network hiccup — roll locally so the game never stalls.
-        res = { outcomeKey: rollLocal(kills, time).key };
+        res = { outcomeKey: rollLocal(run.kills, run.time).key };
       }
       setResultKey(res.outcomeKey);
+      setRewards({
+        bonusDNA: res.bonusDNA || 0,
+        mult: res.mult || 1,
+        newChallenges: res.newChallenges || [],
+        newAchievements: res.newAchievements || [],
+      });
       setPhase("rolling");
     },
     [doRoll]
@@ -425,9 +564,14 @@ function GameShell({
                 🏞️ PRESERVE
               </button>
             </div>
-            <button className="btn-howto" onClick={() => setHowToOpen(true)}>
-              ❓ How to play
-            </button>
+            <div className="menu-sublinks">
+              <button className="btn-howto" onClick={() => setHowToOpen(true)}>
+                ❓ How to play
+              </button>
+              <button className="btn-howto" onClick={() => setTrophiesOpen(true)}>
+                🏆 Trophies &amp; Dex
+              </button>
+            </div>
           </div>
         )}
 
@@ -497,6 +641,7 @@ function GameShell({
             kills={kills}
             survived={survived}
             netWorth={netWorth}
+            rewards={rewards}
             onAgain={() => {
               setResultKey(null);
               startPlaying();
@@ -529,6 +674,16 @@ function GameShell({
           onSave={doSavePreserve}
           onSetScenery={doSetScenery}
           onClose={() => setPreserveOpen(false)}
+        />
+      )}
+
+      {trophiesOpen && (
+        <Trophies
+          meta={meta}
+          netWorth={netWorth}
+          totalKills={totalKills}
+          onPrestige={doPrestige}
+          onClose={() => setTrophiesOpen(false)}
         />
       )}
     </>
