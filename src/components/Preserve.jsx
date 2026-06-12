@@ -126,7 +126,7 @@ export default function Preserve({ netWorth, items, scenery = "jungle", onAdd, o
           ? "Click to place · pick again to cancel"
           : hasSel
             ? "Drag to move · Delete to remove"
-            : "Pick a prop below, then click the ground to place it"}
+            : "Dinos are alive — keep 💧 water + food (🌿 plants / 🍖 meat) nearby or they'll go hungry"}
       </div>
     </div>
   );

@@ -13,6 +13,8 @@ export const DECOR = [
   { key: "boulder", name: "Boulder", emoji: "🗿", cost: 2_500, cat: "Terrain" },
   { key: "pond", name: "Pond", emoji: "💧", cost: 8_000, cat: "Terrain" },
   { key: "nest", name: "Nest", emoji: "🥚", cost: 6_000, cat: "Terrain" },
+  // --- food sources ---
+  { key: "meat", name: "Meat", emoji: "🍖", cost: 5_000, cat: "Food" },
   // --- dinosaurs (pricey trophies) ---
   { key: "ptero", name: "Pteranodon", emoji: "🦅", cost: 12_000, cat: "Dinos" },
   { key: "raptor", name: "Raptor", emoji: "🦎", cost: 15_000, cat: "Dinos" },
@@ -23,4 +25,4 @@ export const DECOR = [
 ];
 
 export const decorByKey = (k) => DECOR.find((d) => d.key === k);
-export const DECOR_CATS = ["Flora", "Terrain", "Dinos"];
+export const DECOR_CATS = ["Flora", "Terrain", "Food", "Dinos"];

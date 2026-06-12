@@ -34,6 +34,15 @@ const SKY_KEYS = [
   { h: 24, top: "#0a1230", hor: "#16213f", star: 1.0, sun: null },
 ];
 
+// Which placed dinos are alive, and what each kind eats.
+const CARNIVORES = new Set(["trex", "raptor", "ptero"]);
+const HERBIVORES = new Set(["stego", "trike", "bronto"]);
+const PLANTS = new Set(["fern", "cycad", "bush", "palm", "conifer"]);
+const WATER = new Set(["pond"]);
+const MEAT = new Set(["meat"]);
+const REACH = 0.34; // how far a dino will look for water/food (normalised)
+const FEED = 0.09; // how close it must be to drink/eat
+
 // Biome palettes + their signature background feature.
 export const SCENERIES = {
   jungle: { g0: "#7fb255", g1: "#4c7a34", hill: "#9cc06a", accent: "volcano", amb: null },
@@ -220,6 +229,7 @@ export class PreserveScene {
         if (cl.x - cl.s > this.w) cl.x = -cl.s;
       }
       this.updateAmbient(dt);
+      this.updateLife(dt);
       this.draw();
       this.raf = requestAnimationFrame(loop);
     };
@@ -320,12 +330,24 @@ export class PreserveScene {
       .sort((a, b) => this.items[a].y - this.items[b].y);
     for (const i of order) {
       const it = this.items[i];
-      const x = it.x * W;
-      const y = it.y * H;
-      const s = this.scaleFor(it.y);
+      const sim = it.sim;
+      const ax = sim ? it.x + sim.ox : it.x;
+      const ay = sim ? it.y + sim.oy : it.y;
+      const x = ax * W;
+      const y = ay * H;
+      const s = this.scaleFor(ay);
       this.shadow(x, y, s);
+      const bobY = sim && sim.state !== "sick" ? Math.sin(sim.bob) * s * 0.03 : 0;
       const fn = DRAW[it.k];
-      if (fn) fn(ctx, x, y, s, this.t);
+      if (fn) {
+        ctx.save();
+        if (sim && sim.state === "sick") ctx.globalAlpha = 0.5;
+        fn(ctx, x, y + bobY, s, this.t);
+        ctx.restore();
+      }
+      if (sim && sim.state !== "happy" && sim.state !== "feeding") {
+        this.bubble(x, y - s * 1.55, sim.state, it.k);
+      }
       if (i === this.selected) {
         ctx.strokeStyle = "#ffd98a";
         ctx.lineWidth = 3;
@@ -446,6 +468,135 @@ export class PreserveScene {
         ctx.fill();
       }
     }
+  }
+
+  // ---------------- the living ecosystem ----------------
+  ensureSim(it) {
+    if (!it.sim) {
+      it.sim = {
+        hunger: 0.7 + Math.random() * 0.3,
+        thirst: 0.7 + Math.random() * 0.3,
+        health: 1,
+        ox: 0, oy: 0, // wander offset from home
+        wx: 0, wy: 0, // current wander goal
+        wt: Math.random() * 3,
+        bob: Math.random() * TAU,
+        state: "happy",
+      };
+    }
+    return it.sim;
+  }
+
+  nearestRes(it, list) {
+    let best = null;
+    let bd = Infinity;
+    for (const r of list) {
+      const d = Math.hypot(r.x - it.x, r.y - it.y);
+      if (d < bd) {
+        bd = d;
+        best = r;
+      }
+    }
+    return best ? { it: best, d: bd } : null;
+  }
+
+  updateLife(dt) {
+    const ponds = [];
+    const plants = [];
+    const meats = [];
+    for (const it of this.items) {
+      if (WATER.has(it.k)) ponds.push(it);
+      else if (PLANTS.has(it.k)) plants.push(it);
+      else if (MEAT.has(it.k)) meats.push(it);
+    }
+
+    for (const it of this.items) {
+      const carn = CARNIVORES.has(it.k);
+      const herb = HERBIVORES.has(it.k);
+      if (!carn && !herb) continue;
+      const s = this.ensureSim(it);
+
+      // Needs tick down over time.
+      s.hunger = Math.max(0, s.hunger - dt * 0.016);
+      s.thirst = Math.max(0, s.thirst - dt * 0.02);
+
+      const nw = this.nearestRes(it, ponds);
+      const nf = this.nearestRes(it, carn ? meats : plants);
+      const lx = it.x + s.ox;
+      const ly = it.y + s.oy;
+
+      // Decide where to go: chase the more pressing unmet need if one's in reach.
+      let target = null;
+      const wantW = s.thirst < 0.5 && nw && nw.d < REACH;
+      const wantF = s.hunger < 0.5 && nf && nf.d < REACH;
+      if (wantW && (!wantF || s.thirst <= s.hunger)) target = nw.it;
+      else if (wantF) target = nf.it;
+
+      let eating = false;
+      let drinking = false;
+      if (s.health < 0.18) {
+        // Collapsed — barely stirs until rescued.
+      } else if (target) {
+        const dx = target.x - lx;
+        const dy = target.y - ly;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d < FEED) {
+          if (WATER.has(target.k)) {
+            s.thirst = Math.min(1, s.thirst + dt * 0.55);
+            drinking = true;
+          } else {
+            s.hunger = Math.min(1, s.hunger + dt * 0.55);
+            eating = true;
+          }
+        } else {
+          s.ox += (dx / d) * 0.05 * dt;
+          s.oy += (dy / d) * 0.05 * dt;
+        }
+      } else {
+        // Content — amble around home.
+        s.wt -= dt;
+        if (s.wt <= 0) {
+          s.wt = 2 + Math.random() * 3;
+          s.wx = (Math.random() - 0.5) * 0.08;
+          s.wy = (Math.random() - 0.5) * 0.05;
+        }
+        s.ox += (s.wx - s.ox) * 0.6 * dt;
+        s.oy += (s.wy - s.oy) * 0.6 * dt;
+      }
+
+      // Keep them on their patch of ground.
+      s.ox = Math.max(-0.18, Math.min(0.18, s.ox));
+      s.oy = Math.max(GROUND_TOP, Math.min(GROUND_BOT, it.y + s.oy)) - it.y;
+
+      // Health responds to whether needs are met.
+      if (s.hunger > 0.25 && s.thirst > 0.25) s.health = Math.min(1, s.health + dt * 0.05);
+      else if (s.hunger <= 0.001 || s.thirst <= 0.001) s.health = Math.max(0, s.health - dt * 0.04);
+
+      s.bob += dt * 4;
+      s.eating = eating;
+      s.drinking = drinking;
+      s.state =
+        s.health < 0.25 ? "sick" :
+        s.thirst < 0.3 ? "thirsty" :
+        s.hunger < 0.3 ? "hungry" :
+        eating || drinking ? "feeding" : "happy";
+    }
+  }
+
+  bubble(x, y, state, k) {
+    const e =
+      state === "thirsty" ? "💧" :
+      state === "hungry" ? (CARNIVORES.has(k) ? "🍖" : "🌿") :
+      state === "sick" ? "💀" : "";
+    if (!e) return;
+    const { ctx } = this;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, TAU);
+    ctx.fill();
+    ctx.font = "15px serif";
+    ctx.textAlign = "center";
+    ctx.fillText(e, x, y + 5);
   }
 
   updateAmbient(dt) {
@@ -634,6 +785,31 @@ const DRAW = {
       ctx.lineWidth = s * 0.02;
       ctx.stroke();
     }
+  },
+  meat(ctx, x, y, s) {
+    // A meaty chunk on a bone — carnivore feeding station.
+    ctx.strokeStyle = "#efe6d2";
+    ctx.lineWidth = s * 0.12;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.3, y - s * 0.05);
+    ctx.lineTo(x + s * 0.35, y - s * 0.3);
+    ctx.stroke();
+    ctx.fillStyle = "#efe6d2";
+    for (const [bx, by] of [[-0.34, 0], [0.4, -0.32]]) {
+      ctx.beginPath();
+      ctx.arc(x + bx * s, y + by * s, s * 0.08, 0, TAU);
+      ctx.arc(x + bx * s + s * 0.06, y + by * s, s * 0.08, 0, TAU);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#a63a32";
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.2, s * 0.26, s * 0.2, -0.3, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#c45a4e";
+    ctx.beginPath();
+    ctx.ellipse(x - s * 0.06, y - s * 0.26, s * 0.1, s * 0.07, -0.3, 0, TAU);
+    ctx.fill();
   },
   ptero(ctx, x, y, s) {
     // Standing pteranodon.

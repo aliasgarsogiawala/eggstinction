@@ -285,7 +285,7 @@ export const consumePowerup = mutation({
 /** Server-authoritative decoration prices (mirror src/game/decor.js). */
 const DECOR_COSTS: Record<string, number> = {
   fern: 2_000, cycad: 3_000, bush: 3_000, palm: 4_000, conifer: 4_000,
-  rock: 1_000, boulder: 2_500, pond: 8_000, nest: 6_000,
+  rock: 1_000, boulder: 2_500, pond: 8_000, nest: 6_000, meat: 5_000,
   ptero: 12_000, raptor: 15_000, stego: 25_000, trike: 30_000,
   bronto: 40_000, trex: 50_000,
 };
