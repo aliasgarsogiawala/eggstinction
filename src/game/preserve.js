@@ -951,6 +951,212 @@ const DRAW = {
     ctx.arc(x - s * 0.5, y - s * 1.25, s * 0.04, 0, TAU);
     ctx.fill();
   },
+
+  // ---------------- trophies (achievement rewards) ----------------
+  goldegg(ctx, x, y, s, t) {
+    // A golden egg on a stone plinth, with a soft pulsing glow.
+    ctx.fillStyle = "#5b5048";
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.06, s * 0.34, s * 0.12, 0, 0, TAU);
+    ctx.fill();
+    const glow = 0.4 + (Math.sin(t * 2) * 0.5 + 0.5) * 0.4;
+    const gg = ctx.createRadialGradient(x, y - s * 0.55, 0, x, y - s * 0.55, s * 0.7);
+    gg.addColorStop(0, `rgba(255,220,120,${glow * 0.5})`);
+    gg.addColorStop(1, "rgba(255,220,120,0)");
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(x, y - s * 0.55, s * 0.7, 0, TAU);
+    ctx.fill();
+    const eg = ctx.createLinearGradient(x, y - s * 0.95, x, y - s * 0.15);
+    eg.addColorStop(0, "#fff3c0");
+    eg.addColorStop(0.5, "#f2c54a");
+    eg.addColorStop(1, "#b8841f");
+    ctx.fillStyle = eg;
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.5, s * 0.26, s * 0.36, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.beginPath();
+    ctx.ellipse(x - s * 0.09, y - s * 0.62, s * 0.06, s * 0.1, -0.4, 0, TAU);
+    ctx.fill();
+  },
+  skulltotem(ctx, x, y, s) {
+    // A bleached skull mounted on a wooden stake.
+    ctx.strokeStyle = "#6b4a2a";
+    ctx.lineWidth = s * 0.12;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - s * 0.6);
+    ctx.stroke();
+    ctx.fillStyle = "#ece4d2";
+    ctx.beginPath();
+    ctx.arc(x, y - s * 0.78, s * 0.22, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.14, y - s * 0.66);
+    ctx.lineTo(x + s * 0.14, y - s * 0.66);
+    ctx.lineTo(x, y - s * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#2a221c";
+    ctx.beginPath();
+    ctx.arc(x - s * 0.09, y - s * 0.8, s * 0.06, 0, TAU);
+    ctx.arc(x + s * 0.09, y - s * 0.8, s * 0.06, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "#2a221c";
+    ctx.lineWidth = s * 0.02;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.06, y - s * 0.6);
+    ctx.lineTo(x + s * 0.06, y - s * 0.6);
+    ctx.stroke();
+  },
+  lavapit(ctx, x, y, s, t) {
+    // A molten pool ringed with dark rock, glowing and bubbling.
+    ctx.fillStyle = "#2a1a14";
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.05, s * 0.5, s * 0.22, 0, 0, TAU);
+    ctx.fill();
+    const pulse = 0.7 + (Math.sin(t * 3) * 0.5 + 0.5) * 0.3;
+    const lg = ctx.createRadialGradient(x, y - s * 0.07, 0, x, y - s * 0.07, s * 0.4);
+    lg.addColorStop(0, `rgba(255,210,90,${pulse})`);
+    lg.addColorStop(0.5, "rgba(240,90,30,0.95)");
+    lg.addColorStop(1, "rgba(140,30,10,0.9)");
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.07, s * 0.38, s * 0.15, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,240,180,${pulse})`;
+    for (let i = 0; i < 3; i++) {
+      const bx = x + Math.sin(t * 2 + i * 2) * s * 0.2;
+      const by = y - s * 0.07 + Math.cos(t * 1.6 + i) * s * 0.05;
+      ctx.beginPath();
+      ctx.arc(bx, by, s * 0.03, 0, TAU);
+      ctx.fill();
+    }
+  },
+  ambertree(ctx, x, y, s) {
+    // A stump cradling a translucent amber bead with a trapped bug.
+    ctx.fillStyle = "#5e4426";
+    ctx.fillRect(x - s * 0.1, y - s * 0.5, s * 0.2, s * 0.5);
+    ctx.fillStyle = "#6f5230";
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.5, s * 0.18, s * 0.07, 0, 0, TAU);
+    ctx.fill();
+    const ag = ctx.createRadialGradient(x - s * 0.06, y - s * 0.78, 0, x, y - s * 0.72, s * 0.32);
+    ag.addColorStop(0, "rgba(255,200,90,0.95)");
+    ag.addColorStop(1, "rgba(200,120,20,0.85)");
+    ctx.fillStyle = ag;
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.72, s * 0.24, s * 0.3, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#3a2410";
+    ctx.beginPath();
+    ctx.ellipse(x, y - s * 0.72, s * 0.04, s * 0.06, 0.5, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = s * 0.012;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - s * 0.72);
+      ctx.lineTo(x + Math.cos(i * 2.1) * s * 0.1, y - s * 0.72 + Math.sin(i * 2.1) * s * 0.1);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(x - s * 0.09, y - s * 0.86, s * 0.05, s * 0.08, -0.4, 0, TAU);
+    ctx.fill();
+  },
+  meteorite(ctx, x, y, s, t) {
+    // A charred cratered space rock still smouldering.
+    ctx.fillStyle = "#3a3530";
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.42, y);
+    ctx.lineTo(x - s * 0.46, y - s * 0.34);
+    ctx.lineTo(x - s * 0.16, y - s * 0.56);
+    ctx.lineTo(x + s * 0.28, y - s * 0.5);
+    ctx.lineTo(x + s * 0.46, y - s * 0.22);
+    ctx.lineTo(x + s * 0.4, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#23201d";
+    for (const [cx, cy, cr] of [[-0.1, -0.3, 0.1], [0.18, -0.18, 0.07], [-0.22, -0.12, 0.06]]) {
+      ctx.beginPath();
+      ctx.arc(x + cx * s, y + cy * s, cr * s, 0, TAU);
+      ctx.fill();
+    }
+    const glow = 0.5 + (Math.sin(t * 4) * 0.5 + 0.5) * 0.5;
+    ctx.strokeStyle = `rgba(255,120,40,${glow})`;
+    ctx.lineWidth = s * 0.03;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.2, y - s * 0.5);
+    ctx.lineTo(x + s * 0.05, y - s * 0.36);
+    ctx.lineTo(x + s * 0.26, y - s * 0.42);
+    ctx.stroke();
+  },
+  bonearch(ctx, x, y, s) {
+    // Two great curved tusks meeting in an archway.
+    ctx.strokeStyle = "#ece4d2";
+    ctx.lineWidth = s * 0.14;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.42, y);
+    ctx.quadraticCurveTo(x - s * 0.5, y - s * 0.9, x, y - s * 1.0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.42, y);
+    ctx.quadraticCurveTo(x + s * 0.5, y - s * 0.9, x, y - s * 1.0);
+    ctx.stroke();
+    ctx.fillStyle = "#d8cdb6";
+    ctx.beginPath();
+    ctx.arc(x, y - s * 1.0, s * 0.1, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,100,70,0.4)";
+    ctx.lineWidth = s * 0.02;
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.36, y - s * 0.2);
+    ctx.lineTo(x - s * 0.3, y - s * 0.5);
+    ctx.stroke();
+  },
+  comboshrine(ctx, x, y, s, t) {
+    // A stone obelisk crowned with a pulsing energy gem.
+    ctx.fillStyle = "#6b6258";
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.18, y);
+    ctx.lineTo(x - s * 0.12, y - s * 0.8);
+    ctx.lineTo(x + s * 0.12, y - s * 0.8);
+    ctx.lineTo(x + s * 0.18, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.04, y);
+    ctx.lineTo(x + s * 0.08, y - s * 0.8);
+    ctx.lineTo(x + s * 0.12, y - s * 0.8);
+    ctx.lineTo(x + s * 0.18, y);
+    ctx.closePath();
+    ctx.fill();
+    const pulse = 0.5 + (Math.sin(t * 5) * 0.5 + 0.5) * 0.5;
+    const gg = ctx.createRadialGradient(x, y - s * 0.95, 0, x, y - s * 0.95, s * 0.4);
+    gg.addColorStop(0, `rgba(255,170,90,${pulse})`);
+    gg.addColorStop(1, "rgba(255,120,40,0)");
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(x, y - s * 0.95, s * 0.4, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#ffb347";
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 1.12);
+    ctx.lineTo(x - s * 0.11, y - s * 0.95);
+    ctx.lineTo(x, y - s * 0.82);
+    ctx.lineTo(x + s * 0.11, y - s * 0.95);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,245,200,${pulse})`;
+    ctx.beginPath();
+    ctx.arc(x - s * 0.03, y - s * 0.98, s * 0.03, 0, TAU);
+    ctx.fill();
+  },
 };
 
 // Generic four-legged-ish dino body used by raptor/stego/trike.

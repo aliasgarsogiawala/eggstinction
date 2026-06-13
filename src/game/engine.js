@@ -3,9 +3,24 @@
 // Predators swarm in from the screen edges; one touch on the egg = HATCHING.
 
 import { sound } from "./sound";
+import { difficultyByKey } from "./difficulty";
 
 const TAU = Math.PI * 2;
-const rand = (a, b) => a + Math.random() * (b - a);
+
+// Deterministic PRNG (mulberry32) — seeded per run so a recording can be
+// re-simulated frame-for-frame from the same seed + input log. Only the
+// GAMEPLAY-affecting randomness routes through this; purely cosmetic noise
+// (ambient ash, ground rocks, particle bursts, screen shake) stays on
+// Math.random and is free to differ between a live run and its replay.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // Predator roster — distinct sizes, speeds, toughness and behaviour so the
 // swarm isn't one flavour of enemy. Unlocked progressively by wave.
@@ -19,14 +34,26 @@ const PREDATORS = {
 };
 
 export class EggDefense {
-  constructor(canvas, { onFertilized, onKill, onWave, upgrades } = {}) {
+  constructor(
+    canvas,
+    { onFertilized, onKill, onWave, upgrades, difficulty, seed, record, replay, onReplayEnd } = {}
+  ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.onFertilized = onFertilized;
     this.onKill = onKill;
     this.onWave = onWave;
+    this.onReplayEnd = onReplayEnd;
     this.upgrades = upgrades || {};
+    this.diff = difficultyByKey(difficulty);
     this.paused = false;
+
+    // Replay vs. live recording wiring.
+    this.isReplay = !!replay;
+    this.replayFrames = replay?.frames || null;
+    this.replaySpeed = 1;
+    this.seed = (replay?.seed ?? seed ?? (Math.random() * 0x100000000)) >>> 0;
+    this.shouldRecord = !!record && !this.isReplay;
 
     this.mouse = { x: 0, y: 0, down: false };
     this.reset();
@@ -42,12 +69,22 @@ export class EggDefense {
     };
     this._onUp = () => (this.mouse.down = false);
 
-    canvas.addEventListener("pointermove", this._onMove);
-    canvas.addEventListener("pointerdown", this._onDown);
-    window.addEventListener("pointerup", this._onUp);
+    // A replay drives the catapult from the recording — ignore the live cursor.
+    if (!this.isReplay) {
+      canvas.addEventListener("pointermove", this._onMove);
+      canvas.addEventListener("pointerdown", this._onDown);
+      window.addEventListener("pointerup", this._onUp);
+    }
   }
 
   reset() {
+    // Seed the deterministic stream + the per-run input log / replay cursor.
+    this.rng = mulberry32(this.seed);
+    this.rand = (a, b) => a + this.rng() * (b - a);
+    this.recording = this.shouldRecord ? [] : null;
+    this._evBuf = [];
+    this.replayCursor = 0;
+
     this.sperms = [];
     this.bullets = [];
     this.particles = [];
@@ -80,7 +117,7 @@ export class EggDefense {
     this.roarGain = 0.045 + (up.roarpower || 0) * 0.015;
     this.roarDmg = 2 + (up.roarpower || 0);
     this.roarMaxMul = 0.6 + (up.roarpower || 0) * 0.06;
-    this.maxEggHP = 1 + (up.egghp || 0);
+    this.maxEggHP = 1 + (up.egghp || 0) + (this.diff.eggBonus || 0);
     this.eggHP = this.maxEggHP;
     this.eggInvuln = 0;
 
@@ -184,6 +221,7 @@ export class EggDefense {
   // Consume a powerup charge mid-run. Buffs are timed; shield is a one-hit guard.
   activate(key) {
     if (this.over) return;
+    if (this.recording) this._evBuf.push(["a", key]);
     this.usedPowerup = true;
     const DURATIONS = { rapidfire: 8, tripleshot: 8, slowfield: 6, pierce: 8 };
     if (key === "shield") {
@@ -201,6 +239,7 @@ export class EggDefense {
   // wounding every predator it sweeps over. The egg's one active defensive move.
   roarTrigger() {
     if (this.over || this.paused || this.roar < 1) return;
+    if (this.recording) this._evBuf.push(["r"]);
     this.roar = 0;
     const c = this.center;
     this.shockwaves.push({
@@ -251,15 +290,15 @@ export class EggDefense {
     const cfg = PREDATORS.runt;
     for (let i = 0; i < 2; i++) {
       this.pendingSpawns.push({
-        x: s.x + rand(-10, 10),
-        y: s.y + rand(-10, 10),
+        x: s.x + this.rand(-10, 10),
+        y: s.y + this.rand(-10, 10),
         type: "runt",
         r: cfg.rMin,
-        speed: rand(cfg.spd[0], cfg.spd[1]),
+        speed: this.rand(cfg.spd[0], cfg.spd[1]),
         hp: 1, maxhp: 1, wob: cfg.wob,
         color: cfg.color, dark: cfg.dark,
-        phase: Math.random() * TAU, angle: 0,
-        kx: rand(-120, 120), ky: rand(-120, 120),
+        phase: this.rng() * TAU, angle: 0,
+        kx: this.rand(-120, 120), ky: this.rand(-120, 120),
         hitFlash: 0, dead: false, split: true,
       });
     }
@@ -273,7 +312,8 @@ export class EggDefense {
     this.isBossWave = n % 3 === 0;
     this.bossSpawned = false;
     this.bossAlive = false;
-    this.spawnRemaining = this.isBossWave ? 4 + n : 6 + n * 2;
+    const base = this.isBossWave ? 4 + n : 6 + n * 2;
+    this.spawnRemaining = Math.max(1, Math.round(base * this.diff.spawnMul));
     this.onWave?.({ wave: n, boss: this.isBossWave });
     sound.play("wave");
   }
@@ -285,7 +325,7 @@ export class EggDefense {
       return;
     }
     if (this.spawnRemaining > 0) {
-      const every = Math.max(0.28, 0.85 - this.wave * 0.04);
+      const every = Math.max(0.28, 0.85 - this.wave * 0.04) / this.diff.spawnMul;
       this.spawnTimer += dt;
       while (this.spawnTimer > every && this.spawnRemaining > 0) {
         this.spawnTimer -= every;
@@ -307,7 +347,7 @@ export class EggDefense {
 
   spawnBoss() {
     const w = this.canvas.width, h = this.canvas.height;
-    const side = Math.floor(Math.random() * 4);
+    const side = Math.floor(this.rng() * 4);
     const pos =
       side === 0 ? { x: w / 2, y: -40 } :
       side === 1 ? { x: w + 40, y: h / 2 } :
@@ -359,6 +399,10 @@ export class EggDefense {
     this.reset();
     this.running = true;
     this.last = performance.now();
+    if (this.isReplay) {
+      this._replayLoop();
+      return;
+    }
     const loop = (t) => {
       if (!this.running) return;
       const dt = Math.min((t - this.last) / 1000, 0.05);
@@ -368,6 +412,46 @@ export class EggDefense {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  }
+
+  // Re-simulate a recorded run: feed each logged frame's input + dt back into
+  // the exact same deterministic engine. `replaySpeed` frames advance per tick.
+  _replayLoop() {
+    const step = () => {
+      if (!this.running) return;
+      if (!this.paused) {
+        const n = Math.max(1, this.replaySpeed | 0);
+        for (let i = 0; i < n; i++) {
+          if (this.replayCursor >= this.replayFrames.length) {
+            this.draw();
+            this.running = false;
+            cancelAnimationFrame(this.raf);
+            this.onReplayEnd?.();
+            return;
+          }
+          const f = this.replayFrames[this.replayCursor++];
+          this.mouse.x = f.x;
+          this.mouse.y = f.y;
+          this.mouse.down = !!f.b;
+          if (f.e) {
+            for (const ev of f.e) {
+              if (ev[0] === "a") this.activate(ev[1]);
+              else if (ev[0] === "r") this.roarTrigger();
+            }
+          }
+          this.update(f.d);
+        }
+      }
+      this.draw();
+      this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  }
+
+  // Progress through the recording, 0..1 (for a replay scrubber).
+  get replayProgress() {
+    if (!this.replayFrames?.length) return 0;
+    return Math.min(1, this.replayCursor / this.replayFrames.length);
   }
 
   stop() {
@@ -391,6 +475,20 @@ export class EggDefense {
 
   // ---------------- update ----------------
   update(dt) {
+    // Log this frame's input (capped) so the run can be replayed deterministically.
+    // Store the EXACT dt + cursor floats the sim consumed — JSON round-trips
+    // doubles losslessly, and any rounding here would drift the re-sim apart.
+    if (this.recording && !this.over && this.recording.length < 12000) {
+      this.recording.push({
+        d: dt,
+        x: this.mouse.x,
+        y: this.mouse.y,
+        b: this.mouse.down ? 1 : 0,
+        e: this._evBuf,
+      });
+      this._evBuf = [];
+    }
+
     this.elapsed += dt;
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30);
     this.updateAtmosphere(dt);
@@ -398,6 +496,7 @@ export class EggDefense {
     if (this.over) {
       // Let the FERTILIZED drama play out, then hand off to React.
       this.updateParticles(dt);
+      if (this.isReplay) return; // a replay just stops when its frames run out
       if (performance.now() - this.fertilizedAt > 1400) {
         this.stop();
         this.onFertilized?.({
@@ -407,6 +506,15 @@ export class EggDefense {
           usedPowerup: this.usedPowerup,
           wave: this.wave,
           bossKills: this.bossKills,
+          difficulty: this.diff.key,
+          replay: this.recording
+            ? {
+                seed: this.seed,
+                w: this.canvas.width,
+                h: this.canvas.height,
+                frames: this.recording,
+              }
+            : null,
         });
       }
       return;
@@ -455,8 +563,9 @@ export class EggDefense {
 
     const c = this.center;
     // Swimmers start sluggish and accelerate hard the longer the egg survives.
+    // Difficulty scales both the base speed and how hard the ramp bites.
     // Slow Field knocks them to 40% speed for its duration.
-    let speedMul = 1 + this.elapsed * 0.05;
+    let speedMul = this.diff.speedMul * (1 + this.elapsed * 0.05 * this.diff.rampMul);
     if (this.buffs.slowfield > 0) speedMul *= 0.4;
 
     // Slow-mo on near-miss: when the closest swimmer is about to touch the egg,
@@ -488,7 +597,7 @@ export class EggDefense {
         if (s.dashClock <= 0) {
           if (s.dashState === "seek") { s.dashState = "wind"; s.dashClock = 0.55; s.hitFlash = 0.6; }
           else if (s.dashState === "wind") { s.dashState = "dash"; s.dashClock = 0.45; }
-          else { s.dashState = "seek"; s.dashClock = (s.type === "boss" ? 2.2 : 3) + Math.random() * 1.4; }
+          else { s.dashState = "seek"; s.dashClock = (s.type === "boss" ? 2.2 : 3) + this.rng() * 1.4; }
         }
         if (s.dashState === "wind") sf = 0.05;
         else if (s.dashState === "dash") sf = s.type === "boss" ? 2.6 : 3.3;
@@ -577,7 +686,7 @@ export class EggDefense {
     if (wv >= 4) pool.push(["charger", 0.45]);
     if (wv >= 5) pool.push(["splitter", 0.5]);
     const total = pool.reduce((s, p) => s + p[1], 0);
-    let r = Math.random() * total;
+    let r = this.rng() * total;
     for (const [t, w] of pool) {
       r -= w;
       if (r <= 0) return t;
@@ -587,26 +696,26 @@ export class EggDefense {
 
   spawnSperm() {
     const w = this.canvas.width, h = this.canvas.height;
-    const side = Math.floor(Math.random() * 4);
+    const side = Math.floor(this.rng() * 4);
     const pos =
-      side === 0 ? { x: Math.random() * w, y: -20 } :
-      side === 1 ? { x: w + 20, y: Math.random() * h } :
-      side === 2 ? { x: Math.random() * w, y: h + 20 } :
-                   { x: -20, y: Math.random() * h };
+      side === 0 ? { x: this.rng() * w, y: -20 } :
+      side === 1 ? { x: w + 20, y: this.rng() * h } :
+      side === 2 ? { x: this.rng() * w, y: h + 20 } :
+                   { x: -20, y: this.rng() * h };
     const type = this.pickType();
     const cfg = PREDATORS[type];
     this.sperms.push({
       ...pos,
       type,
-      r: rand(cfg.rMin, cfg.rMax),
+      r: this.rand(cfg.rMin, cfg.rMax),
       // Slow crawlers at the start; the time-based speedMul ramps them up.
-      speed: rand(cfg.spd[0], cfg.spd[1]),
+      speed: this.rand(cfg.spd[0], cfg.spd[1]),
       hp: cfg.hp,
       maxhp: cfg.hp,
       wob: cfg.wob,
       color: cfg.color,
       dark: cfg.dark,
-      phase: Math.random() * TAU,
+      phase: this.rng() * TAU,
       angle: 0,
       kx: 0,
       ky: 0,
@@ -614,7 +723,7 @@ export class EggDefense {
       dead: false,
       split: false,
       dashState: "seek",
-      dashClock: rand(2, 3.5),
+      dashClock: this.rand(2, 3.5),
     });
   }
 
@@ -626,7 +735,7 @@ export class EggDefense {
     // Triple Shot fans three bullets; otherwise one with a touch of spray.
     const angles = this.buffs.tripleshot > 0
       ? [a - 0.18, a, a + 0.18]
-      : [a + (Math.random() - 0.5) * 0.12];
+      : [a + (this.rng() - 0.5) * 0.12];
     for (const ang of angles) {
       this.bullets.push({
         x: c.x + Math.cos(ang) * muzzle,

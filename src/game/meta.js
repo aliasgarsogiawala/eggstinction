@@ -28,6 +28,25 @@ const hashStr = (s) => {
 export const todayStr = (d = new Date()) =>
   `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 
+// The day before `d`, same format — used to tell whether a login streak continued.
+export const yesterdayStr = (d = new Date()) =>
+  todayStr(new Date(d.getTime() - 86_400_000));
+
+// ---------------- login streak ----------------
+// A daily bonus that grows with consecutive days played, then caps. Mirror the
+// constants + math in convex/leaderboard.ts.
+export const STREAK_BASE = 20_000; // DNA per streak day
+export const STREAK_CAP = 7; // reward stops growing past this many days
+export const streakReward = (streak) =>
+  STREAK_BASE * Math.min(Math.max(streak, 1), STREAK_CAP);
+
+// What a streak becomes today, given the last day a bonus was claimed.
+export function nextStreak(prevStreak = 0, lastClaimDay = "", now = new Date()) {
+  if (lastClaimDay === todayStr(now)) return prevStreak; // already claimed today
+  if (lastClaimDay === yesterdayStr(now)) return prevStreak + 1; // continued
+  return 1; // streak broken (or first ever)
+}
+
 // Deterministic pick of 3 challenges for a given day.
 export function todaysChallenges(dateStr) {
   let h = hashStr(dateStr);

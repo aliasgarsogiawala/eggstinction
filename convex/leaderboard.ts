@@ -86,10 +86,21 @@ function hashStr(s: string) {
   }
   return h >>> 0;
 }
-function todayStr() {
-  const d = new Date();
+function dayStr(d: Date) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
+function todayStr() {
+  return dayStr(new Date());
+}
+function yesterdayStr() {
+  return dayStr(new Date(Date.now() - 86_400_000));
+}
+
+// Login-streak bonus (mirror src/game/meta.js).
+const STREAK_BASE = 20_000;
+const STREAK_CAP = 7;
+const streakReward = (streak: number) =>
+  STREAK_BASE * Math.min(Math.max(streak, 1), STREAK_CAP);
 function todaysChallenges(dateStr: string): Challenge[] {
   let h = hashStr(dateStr);
   const pool = CHALLENGE_POOL.slice();
@@ -133,6 +144,13 @@ const ACHIEVEMENTS: { key: string; reward: number; check: (s: Stats) => boolean 
 ];
 const PRESTIGE_COST = 5_000_000;
 
+// Difficulty reward multipliers (mirror src/game/difficulty.js).
+const DIFF_REWARD: Record<string, number> = {
+  practice: 0.5,
+  survival: 1,
+  speedrun: 1.6,
+};
+
 /** Roll the gacha, bank DNA, and resolve daily challenges + achievements. */
 export const rollGacha = mutation({
   args: {
@@ -144,6 +162,7 @@ export const rollGacha = mutation({
     usedPowerup: v.optional(v.boolean()),
     wave: v.optional(v.number()),
     bossKills: v.optional(v.number()),
+    difficulty: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const seconds = args.survivedSeconds ?? 0;
@@ -215,9 +234,10 @@ export const rollGacha = mutation({
     }
     const achievements = [...have, ...newAchievements];
 
-    // Total DNA this run — prestige multiplies positive gains.
+    // Total DNA this run — prestige + difficulty multiply positive gains.
+    const diffReward = DIFF_REWARD[args.difficulty ?? "survival"] ?? 1;
     let gained = outcome.delta + killEarnings + bonus + achBonus;
-    if (gained > 0) gained = Math.round(gained * mult);
+    if (gained > 0) gained = Math.round(gained * mult * diffReward);
     const nextWorth = (existing?.netWorth ?? 0) + gained;
 
     const fields = {
@@ -267,6 +287,42 @@ export const prestige = mutation({
     const achievements = have.includes("prestige1") ? have : [...have, "prestige1"];
     await ctx.db.patch(existing._id, { netWorth: 0, prestige: nextP, achievements });
     return { ok: true as const, prestige: nextP, mult: 1 + 0.25 * nextP };
+  },
+});
+
+/** Claim the once-per-day login bonus; longer streaks pay more (up to a cap). */
+export const claimDaily = mutation({
+  args: { playerId: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("players")
+      .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
+      .unique();
+
+    const today = todayStr();
+    if (existing?.lastClaimDay === today) {
+      return { ok: false as const, reason: "claimed" as const };
+    }
+    // Streak continues if yesterday was claimed, otherwise it restarts at 1.
+    const prevStreak = existing?.loginStreak ?? 0;
+    const streak = existing?.lastClaimDay === yesterdayStr() ? prevStreak + 1 : 1;
+    const reward = streakReward(streak);
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        name: args.name,
+        netWorth: existing.netWorth + reward,
+        loginStreak: streak,
+        lastClaimDay: today,
+      });
+    } else {
+      await ctx.db.insert("players", {
+        playerId: args.playerId, name: args.name, netWorth: reward,
+        babies: 0, totalKills: 0, bestKillStreak: 0,
+        loginStreak: streak, lastClaimDay: today,
+      });
+    }
+    return { ok: true as const, streak, reward };
   },
 });
 
@@ -448,6 +504,16 @@ const DECOR_COSTS: Record<string, number> = {
   rock: 1_000, boulder: 2_500, pond: 8_000, nest: 6_000, meat: 5_000,
   ptero: 12_000, raptor: 15_000, stego: 25_000, trike: 30_000,
   bronto: 40_000, trex: 50_000,
+  // trophies — free to place, but gated on an achievement (see DECOR_UNLOCK).
+  goldegg: 0, skulltotem: 0, lavapit: 0, ambertree: 0,
+  meteorite: 0, bonearch: 0, comboshrine: 0,
+};
+
+// Trophy decoration → the achievement key that unlocks it (mirror src/game/decor.js).
+const DECOR_UNLOCK: Record<string, string> = {
+  goldegg: "trex", skulltotem: "kills1000", lavapit: "boss10",
+  ambertree: "dexall", meteorite: "survive300", bonearch: "prestige1",
+  comboshrine: "combo50",
 };
 
 /** Spend DNA to add a decoration to the preserve (price enforced server-side). */
@@ -460,6 +526,11 @@ export const addDecoration = mutation({
       .query("players")
       .withIndex("by_playerId", (q) => q.eq("playerId", args.playerId))
       .unique();
+    // Trophies require the unlocking achievement to be earned.
+    const needAch = DECOR_UNLOCK[args.decor];
+    if (needAch && !(existing?.achievements ?? []).includes(needAch)) {
+      return { ok: false as const, reason: "locked" as const };
+    }
     const netWorth = existing?.netWorth ?? 0;
     if (netWorth < cost) return { ok: false as const, reason: "broke" as const };
 
@@ -543,6 +614,11 @@ export const getPlayer = query({
         day,
         keys: todaysChallenges(day).map((c) => c.key),
         done: p.challengeDay === day ? p.challengesDone ?? [] : [],
+      },
+      login: {
+        streak: p.loginStreak ?? 0,
+        lastClaimDay: p.lastClaimDay ?? "",
+        claimable: (p.lastClaimDay ?? "") !== day,
       },
     };
   },

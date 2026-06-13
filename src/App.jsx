@@ -9,6 +9,7 @@ import Marketplace from "./components/Marketplace";
 import Backdrop from "./components/Backdrop";
 import Preserve from "./components/Preserve";
 import Trophies from "./components/Trophies";
+import Replays from "./components/Replays";
 import { decorByKey } from "./game/decor";
 import {
   todayStr,
@@ -16,11 +17,15 @@ import {
   challengeMet,
   newlyEarned,
   achievementByKey,
+  nextStreak,
+  streakReward,
   PRESTIGE_COST,
 } from "./game/meta";
 import { rollLocal, fmtMoney, KILL_REWARD } from "./game/outcomes";
 import { powerupByKey } from "./game/powerups";
 import { upgradeByKey, upgradeCost } from "./game/upgrades";
+import { DIFFICULTIES, difficultyByKey, DEFAULT_DIFFICULTY } from "./game/difficulty";
+import { saveReplayIfBest } from "./game/replays";
 import { sound } from "./game/sound";
 
 // ---------- anonymous identity ----------
@@ -74,6 +79,7 @@ function OnlineApp() {
   const updatePreserve = useMutation(api.leaderboard.updatePreserve);
   const setScenery = useMutation(api.leaderboard.setScenery);
   const prestige = useMutation(api.leaderboard.prestige);
+  const claimDaily = useMutation(api.leaderboard.claimDaily);
 
   const doRoll = useCallback(
     (run) =>
@@ -86,10 +92,12 @@ function OnlineApp() {
         usedPowerup: run.usedPowerup,
         wave: run.wave,
         bossKills: run.bossKills,
+        difficulty: run.difficulty,
       }),
     [rollGacha, playerId, name]
   );
   const doPrestige = useCallback(() => prestige({ playerId, name }), [prestige, playerId, name]);
+  const doClaimDaily = useCallback(() => claimDaily({ playerId, name }), [claimDaily, playerId, name]);
   const doBuy = useCallback(
     (powerup) => buyPowerup({ playerId, name, powerup }),
     [buyPowerup, playerId, name]
@@ -123,6 +131,7 @@ function OnlineApp() {
     bestCombo: player?.bestCombo ?? 0,
     bestTime: player?.bestTime ?? 0,
     totalBossKills: player?.totalBossKills ?? 0,
+    login: player?.login ?? { streak: 0, claimable: false, lastClaimDay: "" },
   };
 
   return (
@@ -146,6 +155,7 @@ function OnlineApp() {
       doSavePreserve={doSavePreserve}
       doSetScenery={doSetScenery}
       doPrestige={doPrestige}
+      doClaimDaily={doClaimDaily}
     />
   );
 }
@@ -191,6 +201,26 @@ function OfflineApp() {
       return {};
     }
   });
+  const [login, setLogin] = useState(() => ({
+    streak: Number(localStorage.getItem("sdg_loginStreak") || 0),
+    lastClaimDay: localStorage.getItem("sdg_lastClaimDay") || "",
+  }));
+
+  const doClaimDaily = useCallback(async () => {
+    const today = todayStr();
+    if (login.lastClaimDay === today) return { ok: false, reason: "claimed" };
+    const streak = nextStreak(login.streak, login.lastClaimDay);
+    const reward = streakReward(streak);
+    setNetWorth((w) => {
+      const next = w + reward;
+      localStorage.setItem("sdg_netWorth", String(next));
+      return next;
+    });
+    localStorage.setItem("sdg_loginStreak", String(streak));
+    localStorage.setItem("sdg_lastClaimDay", today);
+    setLogin({ streak, lastClaimDay: today });
+    return { ok: true, streak, reward };
+  }, [login]);
 
   const doRoll = useCallback(
     async (run) => {
@@ -241,8 +271,9 @@ function OfflineApp() {
       for (const k of newAchievements) achBonus += achievementByKey(k)?.reward || 0;
       const achievements = [...have, ...newAchievements];
 
+      const diffReward = difficultyByKey(run.difficulty).rewardMul;
       let gained = o.delta + killEarnings + bonus + achBonus;
-      if (gained > 0) gained = Math.round(gained * mult);
+      if (gained > 0) gained = Math.round(gained * mult * diffReward);
 
       setNetWorth((w) => {
         const next = w + gained;
@@ -333,7 +364,7 @@ function OfflineApp() {
     async (key) => {
       const d = decorByKey(key);
       if (!d) return { ok: false };
-      if (netWorth < d.cost) return { ok: false, reason: "broke" };
+      if (d.cost > 0 && netWorth < d.cost) return { ok: false, reason: "broke" };
       const nextWorth = netWorth - d.cost;
       setNetWorth(nextWorth);
       localStorage.setItem("sdg_netWorth", String(nextWorth));
@@ -367,6 +398,11 @@ function OfflineApp() {
     bestCombo: meta.bestCombo ?? 0,
     bestTime: meta.bestTime ?? 0,
     totalBossKills: meta.totalBossKills ?? 0,
+    login: {
+      streak: login.streak,
+      lastClaimDay: login.lastClaimDay,
+      claimable: login.lastClaimDay !== day,
+    },
   };
 
   return (
@@ -390,6 +426,7 @@ function OfflineApp() {
       doSavePreserve={doSavePreserve}
       doSetScenery={doSetScenery}
       doPrestige={doPrestige}
+      doClaimDaily={doClaimDaily}
     />
   );
 }
@@ -415,8 +452,29 @@ function GameShell({
   doSavePreserve,
   doSetScenery,
   doPrestige,
+  doClaimDaily,
 }) {
   const [phase, setPhase] = useState("menu"); // menu | playing | rolling | result
+  const [dailyMsg, setDailyMsg] = useState(null);
+  const claimDailyBonus = useCallback(async () => {
+    const res = await doClaimDaily?.();
+    if (res?.ok) {
+      sound.play("power");
+      setDailyMsg(
+        `🔥 Day ${res.streak} streak! +${fmtMoney(res.reward)} 🧬 claimed`
+      );
+    } else {
+      setDailyMsg("Already claimed today — come back tomorrow!");
+    }
+  }, [doClaimDaily]);
+  const [difficulty, setDifficulty] = useState(
+    () => localStorage.getItem("sdg_difficulty") || DEFAULT_DIFFICULTY
+  );
+  const chooseDifficulty = useCallback((key) => {
+    setDifficulty(key);
+    localStorage.setItem("sdg_difficulty", key);
+    sound.play("ui");
+  }, []);
   const [kills, setKills] = useState(0);
   const [survived, setSurvived] = useState(0);
   const [resultKey, setResultKey] = useState(null);
@@ -425,6 +483,7 @@ function GameShell({
   const [preserveOpen, setPreserveOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
   const [trophiesOpen, setTrophiesOpen] = useState(false);
+  const [replaysOpen, setReplaysOpen] = useState(false);
   const [rewards, setRewards] = useState(null);
   const [banner, setBanner] = useState(null);
   const [muted, setMuted] = useState(() => !sound.enabled);
@@ -480,6 +539,17 @@ function GameShell({
     async (run) => {
       setKills(run.kills);
       setSurvived(run.time || 0);
+      // Stash the run's input log locally if it's a new personal best.
+      if (run.replay) {
+        saveReplayIfBest(run.replay, {
+          kills: run.kills,
+          time: run.time || 0,
+          maxCombo: run.maxCombo || 0,
+          wave: run.wave || 0,
+          difficulty: run.difficulty || DEFAULT_DIFFICULTY,
+          date: Date.now(),
+        });
+      }
       let res;
       try {
         res = await doRoll(run);
@@ -493,6 +563,7 @@ function GameShell({
         mult: res.mult || 1,
         newChallenges: res.newChallenges || [],
         newAchievements: res.newAchievements || [],
+        difficulty: run.difficulty || DEFAULT_DIFFICULTY,
       });
       setPhase("rolling");
     },
@@ -547,9 +618,26 @@ function GameShell({
                 }}
               />
             </label>
+            <div className="difficulty-picker">
+              {DIFFICULTIES.map((d) => (
+                <button
+                  key={d.key}
+                  className={`diff-btn ${difficulty === d.key ? "diff-on" : ""}`}
+                  onClick={() => chooseDifficulty(d.key)}
+                  title={d.tagline}
+                >
+                  <span className="diff-emoji">{d.emoji}</span>
+                  <span className="diff-name">{d.name}</span>
+                  <span className="diff-tag">{d.tagline}</span>
+                  <span className="diff-reward">
+                    {d.rewardMul === 1 ? "×1 DNA" : `×${d.rewardMul} DNA`}
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="menu-buttons">
               <button className="btn-big" onClick={startPlaying}>
-                DEFEND THE NEST
+                {difficultyByKey(difficulty).emoji} DEFEND THE NEST
               </button>
               <button className="btn-shop" onClick={() => setShopOpen(true)}>
                 🦴 BONE MARKET
@@ -564,12 +652,29 @@ function GameShell({
                 🏞️ PRESERVE
               </button>
             </div>
+            <div className="daily-streak">
+              <span className="streak-flame" title="Consecutive days claimed">
+                🔥 {meta.login?.streak || 0}-day streak
+              </span>
+              {meta.login?.claimable ? (
+                <button className="btn-daily" onClick={claimDailyBonus}>
+                  🎁 Claim daily +{fmtMoney(streakReward(nextStreak(meta.login?.streak || 0, meta.login?.lastClaimDay || "")))} 🧬
+                </button>
+              ) : (
+                <span className="streak-done">✅ Daily claimed</span>
+              )}
+            </div>
+            {dailyMsg && <div className="daily-msg">{dailyMsg}</div>}
+
             <div className="menu-sublinks">
               <button className="btn-howto" onClick={() => setHowToOpen(true)}>
                 ❓ How to play
               </button>
               <button className="btn-howto" onClick={() => setTrophiesOpen(true)}>
                 🏆 Trophies &amp; Dex
+              </button>
+              <button className="btn-howto" onClick={() => setReplaysOpen(true)}>
+                📽️ Replays
               </button>
             </div>
           </div>
@@ -599,6 +704,7 @@ function GameShell({
             upgrades={upgrades}
             onWave={onWave}
             paused={paused || shopOpen}
+            difficulty={difficulty}
           />
         )}
 
@@ -670,6 +776,7 @@ function GameShell({
           netWorth={netWorth}
           items={preserve}
           scenery={scenery}
+          achievements={meta.achievements}
           onAdd={doAddDecoration}
           onSave={doSavePreserve}
           onSetScenery={doSetScenery}
@@ -686,6 +793,8 @@ function GameShell({
           onClose={() => setTrophiesOpen(false)}
         />
       )}
+
+      {replaysOpen && <Replays onClose={() => setReplaysOpen(false)} />}
     </>
   );
 }

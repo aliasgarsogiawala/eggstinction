@@ -1,5 +1,6 @@
 import { outcomeByKey, fmtMoney, survivalLuck, KILL_REWARD } from "../game/outcomes";
 import { challengeByKey, achievementByKey } from "../game/meta";
+import { difficultyByKey } from "../game/difficulty";
 
 export default function ResultCard({ resultKey, kills, survived, netWorth, rewards, onAgain, onHome }) {
   const o = outcomeByKey(resultKey);
@@ -11,7 +12,8 @@ export default function ResultCard({ resultKey, kills, survived, netWorth, rewar
   const hasRewards =
     (r.newChallenges?.length || 0) + (r.newAchievements?.length || 0) > 0 ||
     (r.bonusDNA || 0) > 0 ||
-    (r.mult || 1) > 1;
+    (r.mult || 1) > 1 ||
+    (r.difficulty && difficultyByKey(r.difficulty).rewardMul !== 1);
 
   return (
     <div className="overlay">
@@ -37,6 +39,12 @@ export default function ResultCard({ resultKey, kills, survived, netWorth, rewar
           <div className="result-rewards">
             {(r.mult || 1) > 1 && (
               <div className="reward-line">✨ Prestige bonus ×{r.mult.toFixed(2)} applied</div>
+            )}
+            {r.difficulty && difficultyByKey(r.difficulty).rewardMul !== 1 && (
+              <div className="reward-line">
+                {difficultyByKey(r.difficulty).emoji} {difficultyByKey(r.difficulty).name} payout
+                ×{difficultyByKey(r.difficulty).rewardMul} applied
+              </div>
             )}
             {r.newChallenges?.map((k) => (
               <div key={k} className="reward-line reward-good">

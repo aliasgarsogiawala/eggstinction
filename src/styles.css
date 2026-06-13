@@ -407,6 +407,145 @@ body {
 .btn-preserve { background: linear-gradient(180deg, #5fa544, #3e7a30); box-shadow: 0 6px 0 #284f1f; }
 .btn-preserve:active { box-shadow: 0 2px 0 #284f1f; }
 
+/* ---------- difficulty picker ---------- */
+.difficulty-picker {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.diff-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 150px;
+  padding: 12px 10px;
+  cursor: pointer;
+  color: var(--ink);
+  background: rgba(8, 15, 9, 0.5);
+  border: 3px solid #33402a;
+  border-radius: 14px;
+  transition: transform 0.08s, border-color 0.12s, background 0.12s;
+}
+.diff-btn:hover { transform: translateY(-2px); border-color: #7a8a4a; }
+.diff-on {
+  border-color: var(--gold);
+  background: rgba(255, 217, 138, 0.12);
+  box-shadow: 0 0 18px rgba(255, 217, 138, 0.25);
+}
+.diff-emoji { font-size: 26px; }
+.diff-name { font-family: "Luckiest Guy", cursive; font-size: 17px; letter-spacing: 0.5px; }
+.diff-tag { font-size: 11px; opacity: 0.72; line-height: 1.3; }
+.diff-reward { font-size: 12px; font-weight: 800; color: var(--gold); margin-top: 2px; }
+
+/* ---------- daily login streak ---------- */
+.daily-streak {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.streak-flame { font-weight: 800; font-size: 15px; color: #ffb347; }
+.streak-done { font-size: 14px; opacity: 0.7; }
+.btn-daily {
+  font-family: "Luckiest Guy", cursive;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: #2a1a08;
+  background: linear-gradient(180deg, #ffd98a, #f0a85a);
+  border: none;
+  border-radius: 12px;
+  padding: 9px 18px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #b0742a;
+  animation: daily-pulse 1.6s ease-in-out infinite;
+}
+.btn-daily:hover { transform: scale(1.04); }
+.btn-daily:active { transform: translateY(3px); box-shadow: 0 1px 0 #b0742a; }
+@keyframes daily-pulse {
+  0%, 100% { box-shadow: 0 4px 0 #b0742a, 0 0 0 rgba(255, 217, 138, 0); }
+  50% { box-shadow: 0 4px 0 #b0742a, 0 0 18px rgba(255, 217, 138, 0.6); }
+}
+.daily-msg { font-size: 14px; font-weight: 700; color: var(--gold); }
+
+/* ---------- replays ---------- */
+.replay-modal {
+  width: min(900px, 96vw);
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 18px;
+  border: 4px solid #33402a;
+  background: radial-gradient(circle at 50% 0%, rgba(42, 58, 34, 0.6), rgba(8, 15, 9, 0.92));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+.replay-summary { font-size: 13px; font-weight: 700; opacity: 0.85; }
+.replay-stage {
+  position: relative;
+  width: 100%;
+  max-height: 62vh;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0e140c;
+  border: 2px solid #33402a;
+}
+.replay-canvas { display: block; width: 100%; height: 100%; }
+.replay-ended {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Luckiest Guy", cursive;
+  font-size: clamp(20px, 4vw, 34px);
+  color: var(--gold);
+  background: rgba(8, 15, 9, 0.55);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+.replay-bar { width: 100%; }
+.replay-progress {
+  width: 100%;
+  height: 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.replay-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5fa544, var(--gold));
+  transition: width 0.08s linear;
+}
+.replay-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+.replay-note { text-align: center; font-size: 12px; opacity: 0.7; }
+
+.replay-empty { text-align: center; padding: 30px 10px; opacity: 0.8; }
+.replay-empty-emoji { font-size: 54px; margin-bottom: 10px; }
+
+.replay-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(27, 42, 26, 0.6);
+  border: 2px solid #33402a;
+}
+.replay-row .troph-info { flex: 1; display: flex; flex-direction: column; }
+.replay-row-stats { font-size: 12px; opacity: 0.78; }
+.replay-watch { font-size: 14px; padding: 8px 16px; }
+.replay-del { padding: 6px 10px; }
+
 /* ---------- preserve (playground) ---------- */
 .preserve {
   position: fixed;
@@ -483,6 +622,17 @@ body {
 .pal-broke { opacity: 0.4; }
 .pal-emoji { font-size: 24px; line-height: 1; }
 .pal-cost { font-size: 10px; font-weight: 900; color: var(--green); }
+
+/* trophy decor — earned, not bought */
+.pal-trophy { border-color: var(--gold); background: rgba(255, 217, 138, 0.1); }
+.pal-trophy .pal-cost { color: var(--gold); }
+.pal-locked {
+  border-color: #33402a;
+  background: rgba(20, 28, 18, 0.9);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.pal-locked:hover { transform: none; border-color: #33402a; }
 
 .preserve-hint {
   position: absolute;

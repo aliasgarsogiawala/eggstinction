@@ -9,6 +9,7 @@ export default function GameCanvas({
   upgrades = {},
   onWave,
   paused = false,
+  difficulty = "survival",
 }) {
   const canvasRef = useRef(null);
   const gameRef = useRef(null);
@@ -27,6 +28,8 @@ export default function GameCanvas({
 
     const game = new EggDefense(canvas, {
       upgrades,
+      difficulty,
+      record: true,
       onWave,
       onKill: (k, c) => {
         setKills(k);

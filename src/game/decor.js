@@ -22,7 +22,21 @@ export const DECOR = [
   { key: "trike", name: "Triceratops", emoji: "🦕", cost: 30_000, cat: "Dinos" },
   { key: "bronto", name: "Brontosaurus", emoji: "🦕", cost: 40_000, cat: "Dinos" },
   { key: "trex", name: "Tyrannosaurus", emoji: "🦖", cost: 50_000, cat: "Dinos" },
+  // --- trophies: NOT for sale. Earned by unlocking achievements, then placed
+  //     for free. `unlock` is an achievement key (see src/game/meta.js).
+  //     Costs MUST mirror DECOR_COSTS + DECOR_UNLOCK in convex/leaderboard.ts.
+  { key: "goldegg", name: "Golden Egg", emoji: "🥚", cost: 0, cat: "Trophy", unlock: "trex" },
+  { key: "skulltotem", name: "Skull Totem", emoji: "💀", cost: 0, cat: "Trophy", unlock: "kills1000" },
+  { key: "lavapit", name: "Lava Pit", emoji: "🌋", cost: 0, cat: "Trophy", unlock: "boss10" },
+  { key: "ambertree", name: "Amber Tree", emoji: "🟠", cost: 0, cat: "Trophy", unlock: "dexall" },
+  { key: "meteorite", name: "Meteorite", emoji: "☄️", cost: 0, cat: "Trophy", unlock: "survive300" },
+  { key: "bonearch", name: "Bone Arch", emoji: "🦴", cost: 0, cat: "Trophy", unlock: "prestige1" },
+  { key: "comboshrine", name: "Combo Shrine", emoji: "💥", cost: 0, cat: "Trophy", unlock: "combo50" },
 ];
 
 export const decorByKey = (k) => DECOR.find((d) => d.key === k);
-export const DECOR_CATS = ["Flora", "Terrain", "Food", "Dinos"];
+export const DECOR_CATS = ["Flora", "Terrain", "Food", "Dinos", "Trophy"];
+
+// Trophy decor keyed by the achievement that unlocks it.
+export const TROPHY_DECOR = DECOR.filter((d) => d.unlock);
+export const isTrophy = (k) => !!decorByKey(k)?.unlock;

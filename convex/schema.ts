@@ -27,6 +27,9 @@ export default defineSchema({
     achievements: v.optional(v.array(v.string())), // unlocked achievement keys
     challengeDay: v.optional(v.string()), // YYYY-M-D of the current daily set
     challengesDone: v.optional(v.array(v.string())), // challenge keys done today
+    // --- daily login streak ---
+    loginStreak: v.optional(v.number()), // consecutive days a daily bonus was claimed
+    lastClaimDay: v.optional(v.string()), // YYYY-M-D the daily bonus was last claimed
     // Hatchling dex: species key → { count, bestTime }.
     collection: v.optional(
       v.record(v.string(), v.object({ count: v.number(), bestTime: v.number() }))

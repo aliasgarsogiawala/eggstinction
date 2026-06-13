@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PreserveScene } from "../game/preserve";
 import { DECOR, DECOR_CATS, decorByKey } from "../game/decor";
+import { achievementByKey } from "../game/meta";
 import { fmtMoney } from "../game/outcomes";
 import { sound } from "../game/sound";
 
@@ -14,7 +15,7 @@ const SCENERY_OPTS = [
 
 // The Prehistoric Preserve — a cozy diorama you decorate with the DNA you earn
 // defending the nest. Pick a prop, click to place, drag to move, Delete to remove.
-export default function Preserve({ netWorth, items, scenery = "jungle", onAdd, onSave, onSetScenery, onClose }) {
+export default function Preserve({ netWorth, items, scenery = "jungle", achievements = [], onAdd, onSave, onSetScenery, onClose }) {
   const canvasRef = useRef(null);
   const sceneRef = useRef(null);
   const initialItems = useRef(items || []);
@@ -24,13 +25,17 @@ export default function Preserve({ netWorth, items, scenery = "jungle", onAdd, o
   const [hasSel, setHasSel] = useState(false);
   const [sceneryKey, setSceneryKey] = useState(scenery);
 
+  const unlocked = new Set(achievements);
+  const canPlace = (d) => (d.unlock ? unlocked.has(d.unlock) : true);
+
   useEffect(() => {
     const sc = new PreserveScene(canvasRef.current, {
       items: initialItems.current,
       scenery,
       onPlace: (key) => {
         const cost = decorByKey(key)?.cost ?? 0;
-        if (dnaRef.current < cost) {
+        // Trophies are free (cost 0) once unlocked — never blocked on funds.
+        if (cost > 0 && dnaRef.current < cost) {
           sound.play("ui");
           return false;
         }
@@ -104,6 +109,26 @@ export default function Preserve({ netWorth, items, scenery = "jungle", onAdd, o
           <div key={cat} className="pal-group">
             <span className="pal-cat">{cat}</span>
             {DECOR.filter((d) => d.cat === cat).map((d) => {
+              if (d.unlock) {
+                const open = unlocked.has(d.unlock);
+                const ach = achievementByKey(d.unlock);
+                return (
+                  <button
+                    key={d.key}
+                    className={`pal-item pal-trophy ${placing === d.key ? "pal-on" : ""} ${open ? "" : "pal-locked"}`}
+                    disabled={!open}
+                    onClick={() => open && pick(d.key)}
+                    title={
+                      open
+                        ? `${d.name} — free to place (earned)`
+                        : `${d.name} — locked. Unlock “${ach?.name}”: ${ach?.desc}`
+                    }
+                  >
+                    <span className="pal-emoji">{open ? d.emoji : "🔒"}</span>
+                    <span className="pal-cost">{open ? "🏆" : ach?.emoji}</span>
+                  </button>
+                );
+              }
               const broke = dna < d.cost;
               return (
                 <button
